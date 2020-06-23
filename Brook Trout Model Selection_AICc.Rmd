@@ -427,7 +427,7 @@ models = c("RMR.model", "MMR.model", "AAS.model", "CTM.model")
 
 for (i in 1:length(models)){
   AIC.Results.NMS[[i]] = subset(dredge(get(models[i]), rank = "AICc", 
-  extra = list(R2 = function(x) r.squaredGLMM(x))), delta < 5)
+  extra = list(R2 = function(x) r.squaredGLMM(x))), delta < 10)
 }
 
 Select.Models.NMS = c()
@@ -518,7 +518,7 @@ models.MS = c("RMR.MS.model", "MMR.MS.model", "AAS.MS.model")
 
 for (i in 1:length(models.MS)){
   AIC.Results.MS[[i]] = subset(dredge(get(models.MS[i]), rank = "AICc", 
-  extra = list(R2 = function(x) r.squaredGLMM(x))), delta < 5)
+  extra = list(R2 = function(x) r.squaredGLMM(x))), delta < 10)
 }
 
 Select.Models.MS = c()
@@ -1839,7 +1839,7 @@ summary(CTM.m1.1)$AIC/summary(CTM.m1.2)$AIC
 	CTM.model = lme(CTM ~ Mother.Acc*Father.Acc*Offspring.Acc + Mass, random = list(~1|Mother.ID, ~1|Father.ID), 
 	weights = varIdent(~Mass|Father.Acc*Offspring.Acc), data = CTM.NMS.Data)
 	
-	subset(dredge(CTM.model, rank = "AICc"), delta <= 5.0)
+	subset(dredge(CTM.model, rank = "AICc"), delta <= 10.0)
 
 ```
 
@@ -1848,7 +1848,7 @@ summary(CTM.m1.1)$AIC/summary(CTM.m1.2)$AIC
 ```{r warning = FALSE, message = FALSE}
 
 AIC.Results.CTM1 = subset(dredge(CTM.model, rank = "AICc", 
-	extra = list(R2 = function(x) r.squaredGLMM(x))), delta < 5)
+	extra = list(R2 = function(x) r.squaredGLMM(x))), delta < 10)
 Select.Models.CTM = c()
 Delta.NMS = c()
 Response = c()
@@ -2398,7 +2398,7 @@ ggsave("/home/joshk/git_repositories/BrookTrout_TG/Figures/log Resting Metabolic
 	REML = FALSE, data = MMR.NMS.Data)	
 
 	AIC.Results.MMR = subset(dredge(MMR.model, rank = "AICc", 
-		extra = list(R2 = function(x) r.squaredGLMM(x))), delta < 5)
+		extra = list(R2 = function(x) r.squaredGLMM(x))), delta < 10)
 
 Select.Models.MMR = c()
 Delta.MMR = c()
@@ -2857,7 +2857,7 @@ print(Model.Comparison)
 	REML = FALSE, weights = 1/log(Mass), data = AAS.NMS.Data)	
 
 	AIC.Results.AAS = subset(dredge(AAS.model, rank = "AICc", 
-		extra = list(R2 = function(x) r.squaredGLMM(x))), delta < 5)
+		extra = list(R2 = function(x) r.squaredGLMM(x))), delta < 10)
 
 Select.Models.AAS = c()
 Delta.AAS = c()
