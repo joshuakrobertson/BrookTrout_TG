@@ -1,0 +1,2624 @@
+---
+title: "The Transgenerational Effect of Environmental Warming on the Upper Thermal Tolerance
+of Brook Trout (*S. fontinalis*): Model Selection"
+author: "Chantelle M. Penney, Joshua K.R. Tabh, Chris C. Wilson, Gary Burness"
+date: "March 22, 2021"
+output: html_document
+---
+
+```{r warning = FALSE, message = FALSE}
+
+# Directory and data import
+
+setwd("/home/joshk/git_repositories/BrookTrout_TG/Data")
+Trout <- read.csv("BrookTrout.csv")
+Trout <- subset(Trout, !is.na(Mother.ID))
+Trout <- subset(Trout, !is.na(Father.ID))
+Trout$Offspring.Acc <- as.factor(Trout$Offspring.Acc)
+Trout$Mother.Acc <- as.factor(Trout$Mother.Acc)
+Trout$Father.Acc <- as.factor(Trout$Father.Acc)
+Trout$Mother.ID <- as.factor(Trout$Mother.ID)
+Trout$Father.ID <- as.factor(Trout$Father.ID)
+
+options(na.action = "na.fail")
+
+## Loading in necessary packages
+
+library("easypackages")
+libraries(
+  "car", "dotwhisker", "dplyr", "ggplot2", "grid", "gridExtra",
+  "knitr", "lme4", "magrittr", "MuMIn", "nlme", "purrr", "rmarkdown"
+)
+
+```
+### Removing mass-specific MO2 measurements from data-frame
+
+```{r warning = FALSE, message = FALSE}
+
+Data = Trout[,c(1:10, 14:17)]
+
+```
+### Assigning ggplot2 themes for figures
+
+```{r warning = FALSE, message = FALSE}
+
+my.theme <- theme(
+  panel.grid.minor = element_blank(),
+  axis.title = element_text(size = 14, family = "Noto Sans"),
+  axis.text = element_text(size = 14, colour = "black", family = "Noto Sans"),
+  axis.title.y = element_text(angle = 0, vjust = 0.5), panel.grid.major =
+    element_line(colour = "grey75"), legend.title = element_text(
+    size = 14,
+    colour = "black", family = "Noto Sans"
+  ), legend.text = element_text(
+    size = 12,
+    colour = "black", family = "Noto Sans"
+  )
+)
+
+my.theme.dw <- theme(
+  panel.grid.minor = element_blank(), panel.grid.major = element_blank(),
+  axis.title = element_text(size = 12, family = "Noto Sans"),
+  axis.text = element_text(size = 12, colour = "black", family = "Noto Sans"),
+  legend.title = element_text(
+    size = 12,
+    colour = "black", family = "Noto Sans"
+  ), legend.text = element_text(
+    size = 12,
+    colour = "black", family = "Noto Sans"
+  )
+)
+
+my.theme.diag <- theme(
+  panel.grid.minor = element_blank(), panel.grid.major = element_blank(),
+  axis.title = element_text(size = 8, family = "Noto Sans"),
+  axis.text = element_text(size = 8, colour = "black", family = "Noto Sans"),
+  legend.title = element_text(
+    size = 8,
+    colour = "black", family = "Noto Sans"
+  ), legend.text = element_text(
+    size = 8,
+    colour = "black", family = "Noto Sans"
+  )
+)
+
+```
+### First, assessing distribution of response variables
+
+```{r warning = FALSE, message = FALSE}
+{
+  RMR.Hist <- ggplot(data = Data, aes(x = RMR)) +
+    geom_histogram(colour = "black", fill = "royalblue") +
+    my.theme +
+    theme_bw() +
+    geom_vline(
+      xintercept = with(na.omit(Data), mean(RMR)), size = 1.25,
+      colour = "darkred", linetype = "dotted"
+    ) +
+    xlab("Resting Metabolic \n Rate (mg O2/h)")
+
+  MMR.Hist <- ggplot(data = Data, aes(x = MMR)) +
+    geom_histogram(colour = "black", fill = "royalblue") +
+    my.theme +
+    theme_bw() +
+    geom_vline(
+      xintercept = with(na.omit(Data), mean(MMR)), size = 1.25,
+      colour = "darkred", linetype = "dotted"
+    ) +
+    xlab("Peak Metabolic \n Rate (mg O2/h)")
+
+  Mass.hist <- ggplot(data = Trout, aes(x = Mass)) +
+    geom_histogram(colour = "black", fill = "royalblue") +
+    my.theme +
+    theme_bw() +
+    geom_vline(
+      xintercept = with(Trout, mean(Mass)), size = 1.25,
+      colour = "darkred", linetype = "dotted"
+    ) +
+    xlab("Mass")
+
+  CTM.hist <- ggplot(data = Trout, aes(x = CTM)) +
+    geom_histogram(colour = "black", fill = "royalblue") +
+    my.theme +
+    theme_bw() +
+    geom_vline(
+      xintercept = with(subset(Data, !is.na(CTM)), mean(CTM)), size = 1.25,
+      colour = "darkred", linetype = "dotted"
+    ) +
+    xlab("Critical Thermal Maximum (Degrees C)")
+}
+
+grid.arrange(RMR.Hist, MMR.Hist, Mass.hist, CTM.hist, nrow = 2)
+
+## Mass appears to fit a Gaussian distibution. Critical thermal maximum not awfully skewed, and all non-mass specific parameters meet gaussian distributions.
+
+```
+### Checking for patterns or biases in mass by family and acclimation temperature
+
+```{r warning = FALSE, message = FALSE}
+
+# Boxplots
+{
+  Mass.plot1 <- ggplot(data = Data, aes(x = as.factor(Parent.group), y = Mass)) +
+    my.theme +
+    theme_bw() +
+    geom_boxplot(fill = "cadetblue") +
+    xlab("Parent Group")
+
+  Mass.plot2 <- ggplot(data = Data, aes(x = as.factor(Family), y = Mass)) +
+    my.theme +
+    theme_bw() +
+    geom_boxplot(fill = "mediumorchid") +
+    xlab("Family")
+
+  Maternal.Bin <- ggplot(data = Data, aes(x = as.factor(Mother.Acc), y = Mass)) +
+    my.theme +
+    theme_bw() +
+    geom_boxplot(fill = "gold2") +
+    xlab("Maternal Acclimation")
+
+  Paternal.Bin <- ggplot(data = Data, aes(x = as.factor(Father.Acc), y = Mass)) +
+    my.theme +
+    theme_bw() +
+    geom_boxplot(fill = "darkseagreen2") +
+    xlab("Paternal Acclimation")
+
+  Offspring.Bin <- ggplot(data = Data, aes(x = as.factor(Offspring.Acc), y = Mass)) +
+    my.theme +
+    theme_bw() +
+    geom_boxplot(fill = "lightcoral") +
+    xlab("Offspring Acclimation")
+
+  Details <- ggplot(data = data.frame("x" = c(1:100), "y" = c(1:100)), aes(x = x, y = y)) +
+    theme_void() +
+    theme(legend.position = "none") +
+    annotate("text",
+      x = 25, y = 70, label =
+        "Central lines represent the \n median of each category."
+    )
+}
+
+grid.arrange(Mass.plot1, Mass.plot2, Maternal.Bin, Paternal.Bin, Offspring.Bin,
+  Details,
+  nrow = 3, top = "Mass by Group"
+)
+
+## Large variation between families, and significant variation between parent groups. Surprising
+## that offspring from cold acclimated parents are larger, but not surprising that warm acclimated
+## offspring are larger.
+
+{
+  RMR.by.Treat <- ggplot(data = Data, aes(x = as.factor(Parent.group), y = RMR)) +
+    my.theme +
+    theme_bw() +
+    geom_boxplot(fill = "cadetblue") +
+    xlab("Parent Group") +
+    ylab("Resting Metabolic Rate \n (mg O2/h)")
+
+  MMR.by.Treat <- ggplot(data = Data, aes(x = as.factor(Parent.group), y = AAS)) +
+    my.theme +
+    theme_bw() +
+    geom_boxplot(fill = "palegreen3") +
+    xlab("Parent Group") +
+    ylab("Peak Metabolic Rate \n (mg O2/h)")
+
+  CTM.by.Treat <- ggplot(data = Data, aes(x = as.factor(Parent.group), y = CTM)) +
+    my.theme +
+    theme_bw() +
+    geom_boxplot(fill = "thistle") +
+    xlab("Parent Group") +
+    ylab("Critical Thermal Maximum \n (Degrees C)")
+}
+
+grid.arrange(RMR.by.Treat, MMR.by.Treat, CTM.by.Treat,
+  nrow = 2, top = "Metabolic Rate and Critical Thermal Max by Treatment"
+)
+
+# No distinct trends outside of peak metabolic rate by parent groups 1 and 4.
+
+{
+  RMR.by.Fam <- ggplot(data = Data, aes(x = as.factor(Family), y = RMR)) +
+    my.theme +
+    theme_bw() +
+    geom_boxplot(fill = "cadetblue") +
+    xlab("Parent Group") +
+    ylab("Resting Metabolic Rate \n (mg O2/h)")
+
+  MMR.by.Fam <- ggplot(data = Data, aes(x = as.factor(Family), y = MMR)) +
+    my.theme +
+    theme_bw() +
+    geom_boxplot(fill = "palegreen3") +
+    xlab("Family") +
+    ylab("Peak Metabolic Rate \n (mg O2/h)")
+
+  CTM.by.Fam <- ggplot(data = Data, aes(x = as.factor(Family), y = CTM)) +
+    my.theme +
+    theme_bw() +
+    geom_boxplot(fill = "thistle") +
+    xlab("Family") +
+    ylab("Critical Thermal Maximum \n (Degrees C)")
+}
+
+grid.arrange(RMR.by.Fam, MMR.by.Fam, CTM.by.Fam,
+  nrow = 2, top = "Metabolic Rate and Critical Thermal Max by Family"
+)
+
+## No consistent patterns accross families.
+
+```
+### Exploring effects of mass on metabolic parameters with preliminary plots
+
+```{r warning = FALSE, message = FALSE}
+
+{
+  RMR.by.Mass <- ggplot(data = Data, aes(x = Mass, y = RMR)) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "cadetblue", alpha = 0.3) +
+    xlab("Mass (g)") +
+    geom_smooth(method = lm, colour = "black") +
+    ylab("Resting Metabolic Rate \n (mg O2/h)")
+
+  MMR.by.Mass <- ggplot(data = Data, aes(x = Mass, y = MMR)) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "thistle", alpha = 0.3) +
+    xlab("Mass (g)") +
+    geom_smooth(method = lm, colour = "black") +
+    ylab("Peak Metabolic Rate \n (mg O2/h)")
+
+  CTM.by.Mass <- ggplot(data = Data, aes(x = Mass, y = CTM)) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "gold2", alpha = 0.3) +
+    xlab("Mass (g)") +
+    geom_smooth(method = lm, colour = "black") +
+    ylab("Critical Thermal Maximum \n (Degrees C)")
+}
+
+grid.arrange(RMR.by.Mass, MMR.by.Mass, CTM.by.Mass,
+  nrow = 2, top = "Metabolic Rate and Critical Thermal Maximum by Mass"
+)
+
+# No clear outliers, but critical thermal maximum and resting metabolic rate heterogenous
+# by mass. Weighting may be necessary if mass-specific responses not used.
+
+```
+### Checking for outliers with Cleveland dotplots
+
+```{r warning = FALSE, message = FALSE}
+
+{
+  RMR.NMS.Data <- subset(Data, !is.na(RMR))
+  RMR.dotplot <- ggplot(data = RMR.NMS.Data, aes(
+    x = RMR, y =
+      (1:nrow(RMR.NMS.Data))
+  )) +
+    my.theme +
+    theme_bw() +
+    geom_point(
+      size =
+        3, colour = "gold2", alpha = 0.5
+    ) +
+    xlab("Resting Metabolic Rate (mg O2/h)") +
+    ylab("Row Number") +
+    annotate("rect",
+      xmin = (with(RMR.NMS.Data, mean(RMR) - 3 * sd(RMR))),
+      xmax = (with(RMR.NMS.Data, mean(RMR) + 3 * sd(RMR))), ymin = 0, ymax = nrow(RMR.NMS.Data),
+      alpha = .2
+    )
+
+  MMR.NMS.Data <- subset(Data, !is.na(MMR))
+  MMR.dotplot <- ggplot(data = MMR.NMS.Data, aes(
+    x = MMR, y =
+      (1:nrow(MMR.NMS.Data))
+  )) +
+    my.theme +
+    theme_bw() +
+    geom_point(
+      size =
+        3, colour = "royalblue", alpha = 0.5
+    ) +
+    xlab("Peak Metabolic Rate (mg O2/h)") +
+    ylab("Row Number") +
+    annotate("rect",
+      xmin = (with(MMR.NMS.Data, mean(MMR) - 3 * sd(MMR))),
+      xmax = (with(MMR.NMS.Data, mean(MMR) + 3 * sd(MMR))), ymin = 0, ymax = nrow(MMR.NMS.Data),
+      alpha = .2
+    )
+
+  CTM.NMS.Data <- subset(Data, !is.na(CTM))
+  CTM.dotplot <- ggplot(data = CTM.NMS.Data, aes(
+    x = CTM, y =
+      (1:nrow(CTM.NMS.Data))
+  )) +
+    my.theme +
+    theme_bw() +
+    geom_point(
+      size =
+        3, colour = "black", alpha = 0.5
+    ) +
+    xlab("Critical Thermal Maximum (Degrees C)") +
+    ylab("Row Number") +
+    annotate("rect",
+      xmin = (with(CTM.NMS.Data, mean(CTM) - 3 * sd(CTM))),
+      xmax = (with(CTM.NMS.Data, mean(CTM) + 3 * sd(CTM))), ymin = 0, ymax = nrow(CTM.NMS.Data),
+      alpha = .2
+    )
+}
+
+grid.arrange(RMR.dotplot, MMR.dotplot, CTM.dotplot,
+  nrow = 2, top = "Non-Mass Specific Response Dotplots: \n Grey boxed represent mean +/-  
+	three standard deviations"
+)
+
+## Outliers not extremely distinct, so retained but monitored below.
+
+```
+## Non-Mass Specific Linear Models
+
+#### Note that sires are not unique to dams; therefore random effects should be crossed
+
+```{r warning = FALSE, message = FALSE}
+
+{
+  RMR.model <- lmer(RMR ~ Mother.Acc * Father.Acc * Offspring.Acc + Mass + (1 | Mother.ID) + (1 | Father.ID),
+    REML = FALSE, data = RMR.NMS.Data
+  )
+
+  MMR.model <- lmer(MMR ~ Mother.Acc * Father.Acc * Offspring.Acc + Mass + (1 | Mother.ID) + (1 | Father.ID),
+    REML = FALSE, data = MMR.NMS.Data
+  )
+
+  CTM.model <- lmer(CTM ~ Mother.Acc * Father.Acc * Offspring.Acc + Mass + (1 | Mother.ID) + (1 | Father.ID),
+    REML = FALSE, weights = Mass, data = CTM.NMS.Data
+  )
+}
+
+# Checking sample sizes
+
+paste("Resting MO2", nrow(RMR.NMS.Data), sep = ": ")
+paste("Peak MO2", nrow(MMR.NMS.Data), sep = ": ")
+paste("Critical Thermal Max", nrow(CTM.NMS.Data), sep = ": ")
+
+```
+### Quick assessment of model dispersion
+```{r warning = FALSE, message = FALSE}
+{
+  RMR.Dev <- abs(summary(RMR.model)$AICtab[[4]] / summary(RMR.model)$AICtab[[5]])
+  MMR.Dev <- abs(summary(MMR.model)$AICtab[[4]] / summary(MMR.model)$AICtab[[5]])
+  CTM.Dev <- abs(summary(CTM.model)$AICtab[[4]] / summary(CTM.model)$AICtab[[5]])
+}
+print(paste("RMR:", RMR.Dev, "MMR:", MMR.Dev, "CTM:", CTM.Dev, sep = " "))
+# All models are highly over-dispersed
+
+```
+### Repeating models with log-transformed (here, using the natural log) response variable and mass
+```{r warning = FALSE, message = FALSE}
+
+{
+  RMR.model <- lmer(log(RMR) ~ Mother.Acc * Father.Acc * Offspring.Acc + log(Mass) + (1 | Mother.ID) + (1 | Father.ID),
+    REML = FALSE, data = RMR.NMS.Data
+  )
+
+  MMR.model <- lmer(log(MMR) ~ Mother.Acc * Father.Acc * Offspring.Acc + log(Mass) + (1 | Mother.ID) + (1 | Father.ID),
+    REML = FALSE, data = MMR.NMS.Data
+  )
+
+  CTM.model <- lmer(CTM ~ Mother.Acc * Father.Acc * Offspring.Acc + log(Mass) + (1 | Mother.ID) + (1 | Father.ID),
+    REML = FALSE, weights = Mass, data = CTM.NMS.Data
+  )
+}
+
+# Double-checking dispersion
+
+{
+  RMR.Dev <- abs(summary(RMR.model)$AICtab[[4]] / summary(RMR.model)$AICtab[[5]])
+  MMR.Dev <- abs(summary(MMR.model)$AICtab[[4]] / summary(MMR.model)$AICtab[[5]])
+  CTM.Dev <- abs(summary(CTM.model)$AICtab[[4]] / summary(CTM.model)$AICtab[[5]])
+}
+print(paste("RMR:", RMR.Dev, "MMR:", MMR.Dev, "CTM:", CTM.Dev, sep = " "))
+
+## Dispersion slightly better, particularly for resting MO2.
+
+# Checking sample size for each grouping, and calculating statistical power of models
+
+RMR.NMS.Data %>%
+  group_by(Offspring.Acc, Father.Acc, Mother.Acc) %>%
+  summarise(N = n()) %>%
+  as.data.frame() %>%
+  summarise(Mean = mean(N), SD = sd(N))
+
+require("pwr")
+
+num_df <- nrow(summary(RMR.model)$coefficients) - 1
+den_df <- nrow(RMR.NMS.Data) - (num_df + 1)
+pwr.f2.test(u = num_df, v = den_df, f2 = 0.05, sig.level = 0.05)
+
+# Fairly high statistical power here. 
+
+```
+## Iterating models and sorting final model outputs by AICc
+```{r warning = FALSE, message = FALSE}
+
+AIC.Results.NMS <- vector("list", 3)
+models <- c("RMR.model", "MMR.model", "CTM.model")
+
+# Looping through models, running with all combinations of predictors,
+# then sorting by AICc
+
+for (i in 1:length(models)) {
+  AIC.Results.NMS[[i]] <- subset(dredge(get(models[i]),
+    rank = "AICc",
+    extra = list(R2 = function(x) r.squaredGLMM(x))
+  ), delta < 5)
+}
+
+Select.Models.NMS <- c()
+Delta.NMS <- c()
+Response <- c()
+Marg.R2 <- c()
+Cond.R2 <- c()
+
+# Looping through models and collecting metrics of fit (i.e. marginal and conditional r-squared values)
+
+for (j in 1:length(AIC.Results.NMS)) {
+  for (i in 1:length(attr(AIC.Results.NMS[[j]], "model.calls"))) {
+    Select.Models.NMS[i] <- gsub(".*~ ", "", paste(attr(AIC.Results.NMS[[j]], "model.calls")[[i]])[2])
+    Delta.NMS[i] <- AIC.Results.NMS[[j]]$delta[i]
+    Response[i] <- gsub(" ~.*", "", paste(attr(AIC.Results.NMS[[j]], "model.calls")[[i]])[2])
+    Marg.R2[i] <- AIC.Results.NMS[[j]]$R21[i]
+    Cond.R2[i] <- AIC.Results.NMS[[j]]$R22[i]
+
+    if (i == length(attr(AIC.Results.NMS[[j]], "model.calls"))) {
+      Table <- data.frame(
+        "Reponse.Type" = "Mass Independant", "Response" = Response,
+        "Delta.AIC" = Delta.NMS, "Marginal.R2" = Marg.R2, "Conditional.R2" = Cond.R2,
+        "Equation" = Select.Models.NMS
+      )
+      assign(paste("AIC.Selection", "NMS", j, sep = "_"), Table)
+    }
+  }
+  Select.Models.NMS <- c()
+  Delta.NMS <- c()
+  Response <- c()
+  Marg.R2 <- c()
+  Cond.R2 <- c()
+}
+
+# Binding outcomes together
+
+AIC.Selection.NMS <- rbind(AIC.Selection_NMS_1, AIC.Selection_NMS_2, AIC.Selection_NMS_3)
+
+# Viewing and saving output
+
+View(AIC.Selection.NMS)
+write.csv(AIC.Selection.NMS, "Model_AIC_Final.csv", row.names = FALSE)
+
+```
+
+## Assessing model outputs
+### Testing model assumptions for criticial thermal maximum: Model 1.
+```{r warning = FALSE, message = FALSE}
+
+## First assessing response by predictors;
+
+{
+  PatT.CTM <- ggplot(data = CTM.NMS.Data, aes(
+    x = as.factor(Father.Acc),
+    y = CTM
+  )) +
+    theme_bw() +
+    geom_boxplot(fill = "mediumorchid", aes(middle = mean(CTM))) +
+    xlab("Sire Acclimation Temperature") +
+    ylab("Critical Thermal Maximum \n (Degrees C)")
+
+  DamT.CTM <- ggplot(data = CTM.NMS.Data, aes(
+    x = as.factor(Mother.Acc),
+    y = CTM
+  )) +
+    theme_bw() +
+    geom_boxplot(fill = "mediumseagreen", aes(middle = mean(CTM))) +
+    xlab("Dam Acclimation Temperature") +
+    ylab("Critical Thermal Maximum \n (Degrees C)")
+
+  OffT.CTM <- ggplot(data = CTM.NMS.Data, aes(
+    x = as.factor(Offspring.Acc),
+    y = CTM
+  )) +
+    theme_bw() +
+    geom_boxplot(fill = "royalblue", aes(middle = mean(CTM))) +
+    xlab("Offspring Acclimation Temperature") +
+    ylab("Critical Thermal Maximum \n (Degrees C)")
+
+  Pat.by.CTM1 <- ggplot(data = CTM.NMS.Data, aes(
+    x = as.factor(Father.Acc),
+    y = CTM, fill = Offspring.Acc
+  )) +
+    theme_bw() +
+    theme(legend.position = "top") +
+    geom_boxplot() +
+    scale_fill_manual(values = c("mediumorchid", "royalblue")) +
+    xlab("Sire Acclimation Temperature") +
+    ylab("Critical Thermal Maximum \n (Degrees C)")
+
+  Pat.by.CTM2 <- ggplot(data = CTM.NMS.Data, aes(
+    x = as.factor(Father.Acc),
+    y = CTM, fill = Mother.Acc
+  )) +
+    theme_bw() +
+    theme(legend.position = "top") +
+    geom_boxplot() +
+    scale_fill_manual(values = c(
+      "mediumseagreen",
+      "royalblue"
+    )) +
+    xlab("Sire Acclimation Temperature") +
+    ylab("Critical Thermal Maximum \n (Degrees C)")
+
+  Off.by.CTM <- ggplot(data = CTM.NMS.Data, aes(
+    x = as.factor(Offspring.Acc),
+    y = CTM, fill = Mother.Acc
+  )) +
+    theme_bw() +
+    theme(legend.position = "top") +
+    geom_boxplot() +
+    scale_fill_manual(values = c(
+      "mediumorchid",
+      "mediumseagreen"
+    )) +
+    xlab("Offspring Acclimation Temperature") +
+    ylab("Critical Thermal Maximum \n (Degrees C)")
+}
+
+grid.arrange(PatT.CTM, DamT.CTM, OffT.CTM, Pat.by.CTM1, Pat.by.CTM2, Off.by.CTM, nrow = 2, top = "Fixed Effects by Response: Boxplot Bars Represent Means")
+
+## Re-iterating top model for further plotting
+
+CTM.m1 <- lmer(CTM ~ Father.Acc + Mother.Acc + Offspring.Acc + Father.Acc:Mother.Acc +
+  Father.Acc:Offspring.Acc + Mother.Acc:Offspring.Acc +
+  Father.Acc:Mother.Acc:Offspring.Acc + (1 | Mother.ID) + (1 | Father.ID),
+REML = FALSE, weights = Mass, data = CTM.NMS.Data
+)
+
+# Note singular fit error. Checking estimates of random intercepts
+
+summary(CTM.m1)$varcor
+
+## Paternal ID explaining little to no variance in data. Could probably be dropped from model. First, diagnosing residuals.
+
+{
+  Res.Alone.m1 <- ggplot(
+    data = data.frame("Res" = residuals(CTM.m1, type = "deviance")),
+    aes(x = 1:nrow(CTM.NMS.Data), y = Res)
+  ) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "mediumseagreen", alpha = 0.5) +
+    xlab("Row Number") +
+    ylab("Deviance Residuals")
+
+  Res.by.Fit.m1 <- ggplot(
+    data = data.frame("Res" = residuals(CTM.m1), "Fit" = predict(CTM.m1)),
+    aes(x = Fit, y = Res)
+  ) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "cornflowerblue", alpha = 0.5) +
+    xlab("Fitted Values") +
+    ylab("Deviance Residuals")
+
+  Res.by.Resp.m1 <- ggplot(
+    data = data.frame("Res" = residuals(CTM.m1), "Resp" = CTM.NMS.Data$CTM),
+    aes(x = Resp, y = Res)
+  ) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "mediumorchid", alpha = 0.5) +
+    xlab("log Mass Specific Metabolic Rate") +
+    ylab("Deviance Residuals")
+
+  QQNorm.1.m1 <- ggplot(
+    data.frame("Res" = residuals(CTM.m1), "Fit" = predict(CTM.m1)),
+    aes(sample = Res)
+  ) +
+    stat_qq(colour = "gold") +
+    stat_qq_line() +
+    my.theme +
+    theme_bw()
+}
+
+grid.arrange(Res.Alone.m1, Res.by.Fit.m1, Res.by.Resp.m1, QQNorm.1.m1, nrow = 2, top = "Mass Specific Resting Metabolic Rate Residuals")
+
+qqPlot(residuals(CTM.m1, type = "deviance"), ylab = "Deviance Residuals")
+
+# Some low end deviation, but minimal.
+
+CTM.m1.res <- data.frame("Model" = "Model1", "Res" = c(residuals(CTM.m1, type = "deviance")))
+
+ggplot(CTM.m1.res, aes(Res, fill = Model, colour = Model)) +
+  geom_histogram(alpha = 0.5) +
+  theme_bw() +
+  my.theme +
+  xlab("Deviance Residuals") +
+  ylab("Count") +
+  scale_fill_manual(
+    values =
+      c("mediumseagreen")
+  ) +
+  scale_colour_manual(values = c("black")) +
+  theme(legend.position = "none") +
+  geom_density(alpha = 0.5, aes(y = 0.1 * ..count..))
+
+# Residuals appear reasonable.
+## Assessing parameter-specific patterns.
+
+{
+  PatT.Res.m1 <- ggplot(data = CTM.NMS.Data, aes(
+    x = as.factor(Father.Acc),
+    y = residuals(CTM.m1, "deviance")
+  )) +
+    theme_bw() +
+    geom_boxplot(fill = "mediumorchid", aes(middle = mean(residuals(CTM.m1, "deviance")))) +
+    xlab("Sire Acclimation Temperature") +
+    ylab("Deviance Residuals")
+
+  DamT.Res.m1 <- ggplot(data = CTM.NMS.Data, aes(
+    x = as.factor(Mother.Acc),
+    y = residuals(CTM.m1, "deviance")
+  )) +
+    theme_bw() +
+    geom_boxplot(fill = "mediumseagreen", aes(middle = mean(residuals(CTM.m1, "deviance")))) +
+    xlab("Dam Acclimation Temperature") +
+    ylab("Deviance Residuals")
+
+  OffT.Res.m1 <- ggplot(data = CTM.NMS.Data, aes(
+    x = as.factor(Offspring.Acc),
+    y = residuals(CTM.m1, "deviance")
+  )) +
+    theme_bw() +
+    geom_boxplot(fill = "royalblue", aes(middle = mean(residuals(CTM.m1, "deviance")))) +
+    xlab("Offspring Acclimation Temperature") +
+    ylab("Deviance Residuals")
+
+  Pat.by.Off.T.Res.m1 <- ggplot(data = CTM.NMS.Data, aes(
+    x = as.factor(Father.Acc),
+    y = residuals(CTM.m1, type = "deviance"), fill = Offspring.Acc
+  )) +
+    theme_bw() +
+    theme(legend.position = "top") +
+    geom_boxplot() +
+    scale_fill_manual(values = c("mediumorchid", "royalblue")) +
+    xlab("Sire Acclimation Temperature") +
+    ylab("Deviance Residuals")
+
+  Pat.by.Dam.T.Res.m1 <- ggplot(data = CTM.NMS.Data, aes(
+    x = as.factor(Father.Acc),
+    y = residuals(CTM.m1, type = "deviance"), fill = Mother.Acc
+  )) +
+    theme_bw() +
+    theme(legend.position = "top") +
+    geom_boxplot() +
+    scale_fill_manual(values = c(
+      "mediumseagreen",
+      "royalblue"
+    )) +
+    xlab("Sire Acclimation Temperature") +
+    ylab("Deviance Residuals")
+
+  Off.by.Dam.T.Res.m1 <- ggplot(data = CTM.NMS.Data, aes(
+    x = as.factor(Offspring.Acc),
+    y = residuals(CTM.m1, type = "deviance"), fill = Mother.Acc
+  )) +
+    theme_bw() +
+    theme(legend.position = "top") +
+    geom_boxplot() +
+    scale_fill_manual(values = c(
+      "mediumorchid",
+      "mediumseagreen"
+    )) +
+    xlab("Offspring Acclimation Temperature") +
+    ylab("Deviance Residuals")
+}
+
+grid.arrange(PatT.Res.m1, DamT.Res.m1, OffT.Res.m1, Pat.by.Off.T.Res.m1, Pat.by.Dam.T.Res.m1, Off.by.Dam.T.Res.m1, nrow = 2, top = "Fixed Effects by Residuals: Boxplot Bars Represent Means")
+
+# Plots suggest a possible sire by offspring heteroskedasticity. Retrying model with constant variance per group.
+
+CTM.m1.1 <- lme(CTM ~ Father.Acc + Mother.Acc + Offspring.Acc + Father.Acc:Mother.Acc +
+  Father.Acc:Offspring.Acc + Mother.Acc:Offspring.Acc +
+  Father.Acc:Mother.Acc:Offspring.Acc,
+random = list(~ 1 | Mother.ID, ~ 1 | Father.ID),
+weights = ~Mass, data = CTM.NMS.Data
+)
+
+CTM.m1.2 <- lme(CTM ~ Father.Acc + Mother.Acc + Offspring.Acc + Father.Acc:Mother.Acc +
+  Father.Acc:Offspring.Acc + Mother.Acc:Offspring.Acc +
+  Father.Acc:Mother.Acc:Offspring.Acc,
+random = list(~ 1 | Mother.ID, ~ 1 | Father.ID),
+weights = varIdent(form = ~ Mass | Father.Acc * Offspring.Acc), data = CTM.NMS.Data
+)
+
+# Note that singular fit error is no longer present.
+
+summary(CTM.m1.1)$AIC / summary(CTM.m1.2)$AIC
+
+# Wow! Significant improvement in AIC. Again, assessing residuals.
+
+{
+  Res.Alone.m1 <- ggplot(
+    data = data.frame("Res" = residuals(CTM.m1.2, type = "normalized")),
+    aes(x = 1:nrow(CTM.NMS.Data), y = Res)
+  ) +
+    theme_bw() +
+    geom_point(size = 3, colour = "mediumseagreen", alpha = 0.5) +
+    xlab("Row Number") +
+    ylab("Deviance Residuals")
+
+  Res.by.Fit.m1 <- ggplot(data = data.frame(
+    "Res" = residuals(CTM.m1.2, type = "normalized"),
+    "Fit" = predict(CTM.m1.2)
+  ), aes(x = Fit, y = Res)) +
+    theme_bw() +
+    geom_point(size = 3, colour = "cornflowerblue", alpha = 0.5) +
+    xlab("Fitted Values") +
+    ylab("Deviance Residuals")
+
+  Res.by.Resp.m1 <- ggplot(data = data.frame(
+    "Res" = residuals(CTM.m1.2, type = "normalized"),
+    "Resp" = CTM.NMS.Data$CTM
+  ), aes(x = Resp, y = Res)) +
+    theme_bw() +
+    geom_point(size = 3, colour = "mediumorchid", alpha = 0.5) +
+    xlab("log Mass Specific Metabolic Rate") +
+    ylab("Deviance Residuals")
+
+  QQNorm.1.m1 <- ggplot(data.frame(
+    "Res" = residuals(CTM.m1.2, type = "normalized"),
+    "Fit" = predict(CTM.m1.2)
+  ), aes(sample = Res)) +
+    stat_qq(colour = "gold") +
+    stat_qq_line() +
+    theme_bw()
+}
+
+grid.arrange(Res.Alone.m1, Res.by.Fit.m1, Res.by.Resp.m1, QQNorm.1.m1, nrow = 2, top = "Mass Specific Resting Metabolic Rate Residuals")
+
+# Far cleaner. Double-checking confidence intervals.
+
+qqPlot(residuals(CTM.m1.2, type = "normalized"), ylab = "Normalized Residuals")
+
+# Well enough behaved! Re-testing AIC with new variance structure.
+
+CTM.model <- lme(CTM ~ Mother.Acc * Father.Acc * Offspring.Acc + Mass,
+  random = list(~ 1 | Mother.ID, ~ 1 | Father.ID),
+  weights = varIdent(~ Mass | Father.Acc * Offspring.Acc), data = CTM.NMS.Data
+)
+
+subset(dredge(CTM.model, rank = "AICc"), delta <= 2.0)
+
+```
+## Re-calculating AICs for model iterations: criticial thermal maximum.
+```{r warning = FALSE, message = FALSE}
+
+AIC.Results.CTM1 <- subset(dredge(CTM.model,
+  rank = "AICc",
+  extra = list(R2 = function(x) r.squaredGLMM(x))
+), delta < 2)
+
+{
+  Select.Models.CTM <- c()
+  Delta.NMS <- c()
+  Response <- c()
+  Marg.R2 <- c()
+  Cond.R2 <- c()
+  Select.Models.CTM1 <- gsub("[[:space:]].*", "", gsub(".*~ ", "", paste(attr(AIC.Results.CTM1, "model.calls")[[1]])[2]))
+  Delta.CTM1 <- AIC.Results.CTM1$delta[1]
+  Response <- gsub(" ~.*", "", paste(attr(AIC.Results.CTM1, "model.calls")[[1]])[2])
+  Marg.R2 <- AIC.Results.CTM1$R21[1]
+  Cond.R2 <- AIC.Results.CTM1$R22[1]
+  Table <- data.frame("Reponse.Type" = "Mass Independant", "Response" = Response, "Delta.AIC" = Delta.CTM1, "Marginal.R2" = Marg.R2, "Conditional.R2" = Cond.R2, "Equation" = Select.Models.CTM1)
+  assign(paste("AIC.Selection", "NMS", 3, sep = "_"), Table)
+}
+
+# Stacking all top models
+
+AIC.Selection.NMS <- rbind(AIC.Selection_NMS_1, AIC.Selection_NMS_2, AIC.Selection_NMS_3)
+View(AIC.Selection.NMS)
+write.csv(AIC.Selection.NMS, "Model_AIC_Final.csv", row.names = FALSE)
+
+```
+### Re-assessing criticial thermal maximum: model 1.
+```{r warning = FALSE, message = FALSE}
+
+CTM.model.m1 <- lme(CTM ~ Offspring.Acc, random = list(~ 1 | Mother.ID, ~ 1 | Father.ID), weights = varIdent(~ Mass | Father.Acc * Offspring.Acc), data = CTM.NMS.Data)
+
+# Residual Plots
+
+{
+  Res.Alone.m1 <- ggplot(
+    data = data.frame("Res" = residuals(CTM.model.m1, type = "normalized")),
+    aes(x = 1:nrow(CTM.NMS.Data), y = Res)
+  ) +
+    theme_bw() +
+    geom_point(size = 3, colour = "mediumseagreen", alpha = 0.5) +
+    xlab("Row Number") +
+    ylab("Deviance Residuals")
+
+  Res.by.Fit.m1 <- ggplot(data = data.frame(
+    "Res" = residuals(CTM.model.m1, type = "normalized"),
+    "Fit" = predict(CTM.model.m1)
+  ), aes(x = Fit, y = Res)) +
+    theme_bw() +
+    geom_point(size = 3, colour = "cornflowerblue", alpha = 0.5) +
+    xlab("Fitted Values") +
+    ylab("Deviance Residuals")
+
+  Res.by.Resp.m1 <- ggplot(data = data.frame(
+    "Res" = residuals(CTM.model.m1, type = "normalized"),
+    "Resp" = CTM.NMS.Data$CTM
+  ), aes(x = Resp, y = Res)) +
+    theme_bw() +
+    geom_point(size = 3, colour = "mediumorchid", alpha = 0.5) +
+    xlab("log Mass Specific Metabolic Rate") +
+    ylab("Deviance Residuals")
+
+  QQNorm.1.m1 <- ggplot(data.frame(
+    "Res" = residuals(CTM.model.m1, type = "normalized"),
+    "Fit" = predict(CTM.model.m1)
+  ), aes(sample = Res)) +
+    stat_qq(colour = "gold") +
+    stat_qq_line() +
+    theme_bw()
+}
+
+grid.arrange(Res.Alone.m1, Res.by.Fit.m1, Res.by.Resp.m1, QQNorm.1.m1,
+  nrow = 2, top =
+    "Mass Specific Resting Metabolic Rate Residuals"
+)
+
+qqPlot(residuals(CTM.model.m1, type = "normalized"), ylab = "Deviance Residuals")
+
+# Checking marginal and conditional R^2 values.
+
+r.squaredGLMM(CTM.model.m1)
+
+# Surprisingly reasonable. 47% of response explained by offspring temperature acclimation
+
+# Calculating p-values
+
+CTM.dwdata1 <- data.frame(term = c(names(summary(CTM.model.m1)$coefficients$fixed)), estimate = c(summary(CTM.model.m1)$coefficients$fixed[1:2]), std.error = c(summary(CTM.model.m1)$tTable[, 2]), statistic = c(summary(CTM.model.m1)$tTable[, 4]))
+
+p.values <- c()
+for (i in 1:nrow(CTM.dwdata1)) {
+  p.values[i] <- pt(abs(CTM.dwdata1$statistic[i]), df = 8, lower.tail = FALSE)
+}
+
+CTM.dwdata1$p.values <- round(p.values, 3)
+CTM.dwdata1$term <- c("(Intercept)", "Offspring Acclimation Temperature")
+
+# Plotting fitted model
+
+CTM.Fits <- ggplot(
+  data = data.frame(
+    Pred = c(predict(CTM.model.m1)), Resp = c(CTM.NMS.Data$CTM),
+    Model = "Mod1"
+  ),
+  aes(x = Pred, y = Resp, fill = Model, colour = Model)
+) +
+  theme_bw() +
+  my.theme +
+  geom_point(pch = 21, size = 3, alpha = 0.5) +
+  geom_smooth(method = "lm") +
+  xlab("Predicted Critical Thermal Maximum") +
+  ylab("Measured Critical \n Thermal Maximum") +
+  scale_fill_manual(values = c("cornflowerblue")) +
+  scale_colour_manual(values = c("black")) +
+  theme(legend.position = "none") +
+  xlim(c(28.4, 29.2))
+
+print(CTM.Fits)
+
+ggsave("Critical Thermal Maximum Fit Comparisons.jpeg", dpi = 1000, limitsize = TRUE)
+CTM.Models <- CTM.dwdata1 %>%
+  mutate(model = "Model 1")
+
+```
+
+### Testing model assumptions for resting metabic rate: model 1.
+```{r warning = FALSE, message = FALSE}
+
+RMR.m1 <- lmer(log(RMR) ~ log(Mass) + Mother.Acc + (1 | Mother.ID) + (1 | Father.ID), REML = FALSE, data = RMR.NMS.Data)
+
+# Checking for collineary between predictors.
+car::vif(RMR.m1) # very low evidence of collinearity between predictors.
+
+# R2?
+r.squaredGLMM(RMR.m1) # low marginal R2 (0.134)
+
+require(r2glmm)
+r2beta(model = RMR.m1, partial = TRUE, method = "nsj") # Mass partial R2 > that of maternal acclimation temperatures
+
+summary(RMR.m1)$varcor
+# Minimal variance explained by random effects (which explains singular fit), but retained for comparability. Diagnosing residuals
+
+{
+  Res.Alone <- ggplot(
+    data = data.frame("Res" = residuals(RMR.m1, type = "deviance")),
+    aes(x = 1:nrow(RMR.NMS.Data), y = Res)
+  ) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "mediumseagreen", alpha = 0.5) +
+    xlab("Row Number") +
+    ylab("Deviance Residuals")
+
+  Res.by.Fit <- ggplot(
+    data = data.frame("Res" = residuals(RMR.m1), "Fit" = predict(RMR.m1)),
+    aes(x = Fit, y = Res)
+  ) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "cornflowerblue", alpha = 0.5) +
+    xlab("Fitted Values") +
+    ylab("Deviance Residuals")
+
+  Res.by.Resp <- ggplot(data = data.frame(
+    "Res" = residuals(RMR.m1), "Resp" =
+      log(RMR.NMS.Data$RMR)
+  ), aes(x = Resp, y = Res)) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "mediumorchid", alpha = 0.5) +
+    xlab("Resting Metabolic Rate") +
+    ylab("Deviance Residuals")
+
+  QQNorm <- ggplot(
+    data.frame("Res" = residuals(RMR.m1), "Fit" = predict(RMR.m1)),
+    aes(sample = Res)
+  ) +
+    stat_qq(colour = "gold") +
+    stat_qq_line() +
+    my.theme +
+    theme_bw()
+}
+
+grid.arrange(Res.Alone, Res.by.Fit, Res.by.Resp, QQNorm, nrow = 2, top = "Resting Metabolic Rate Residuals")
+
+## Residuals posisbly non-normal; slight high-end taper. Checking confidence intervals
+
+qqPlot(residuals(RMR.m1, type = "deviance"), ylab = "Deviance Residuals")
+
+# Taper is within confidence intervals, however. Using a histogram to confirm this speculation below.
+
+Resid.hist <- ggplot(
+  data.frame(Res = c(residuals(RMR.m1, type = "deviance")), Model = "Model1"),
+  aes(Res, fill = Model, colour = Model)
+) +
+  geom_histogram(alpha = 0.5, bins = 20) +
+  theme_bw() +
+  my.theme +
+  xlab("Deviance Residuals") +
+  ylab("Count") +
+  scale_fill_manual(
+    values =
+      c("cornflowerblue")
+  ) +
+  scale_colour_manual(values = c("black")) +
+  theme(legend.position = "none") +
+  geom_density(alpha = 0.5, aes(y = 1.0 / 9 * ..count..))
+
+print(Resid.hist)
+
+# Yes, reasonably normal distribution. Plotting residuals by predictors.
+
+{
+  Res.by.Mass <- ggplot(data = data.frame(
+    "Mass" = RMR.NMS.Data$Mass,
+    "Res" = residuals(RMR.m1)
+  ), aes(x = Mass, y = Res, colour = as.factor(RMR.NMS.Data$Mother.Acc))) +
+    theme_bw() +
+    geom_point(size = 3, alpha = 0.5) +
+    my.theme +
+    xlab("Mass (g)") +
+    ylab("Deviance Residuals") +
+    scale_colour_manual(values = c("royalblue", "gold2")) +
+    guides(colour = guide_legend(title = "Dam Acclimation \nTemperature"))
+
+  Res.by.Dam <- ggplot(data = data.frame(
+    "Dam" = as.factor(RMR.NMS.Data$Mother.Acc),
+    "Res" = residuals(RMR.m1)
+  ), aes(x = Dam, y = Res)) +
+    theme_bw() +
+    geom_boxplot(fill = "royalblue") +
+    my.theme +
+    xlab("Dam Acclimation Temperature (Degrees C)") +
+    ylab("Deviance Residuals")
+}
+
+grid.arrange(Res.by.Mass, Res.by.Dam, nrow = 2, top = "Resting Metabolic Rate Residuals")
+
+# Homoskedastic. Calculating p-values.
+
+dwdata.RMR.NMS.m1 <- data.frame(
+  term = c(rownames(summary(RMR.m1)$coefficients)),
+  estimate = c(summary(RMR.m1)$coefficients[1:3]),
+  std.error = c(summary(RMR.m1)$coefficients[4:6]),
+  statistic = c(summary(RMR.m1)$coefficients[7:9])
+)
+
+p.values.m1 <- c()
+for (i in 1:nrow(dwdata.RMR.NMS.m1)) {
+  p.values.m1[i] <- pt(abs(dwdata.RMR.NMS.m1$statistic[i]), df = 8, lower.tail = FALSE)
+}
+
+dwdata.RMR.NMS.m1$p.values <- round(p.values.m1, 3)
+dwdata.RMR.NMS.m1$term <- c("(Intercept)", "log Mass", "Dam Acclimation Temperature")
+
+```
+### Testing model assumptions for resting metabic rate: model 2.
+```{r warning = FALSE, message = FALSE}
+
+RMR.m2 <- lmer(log(RMR) ~ log(Mass) + Offspring.Acc + Mother.Acc + (1 | Mother.ID) + (1 | Father.ID),
+  REML = FALSE, data = RMR.NMS.Data
+)
+
+car::vif(RMR.m2) # again, low evidence of collinearity.
+r.squaredGLMM(RMR.m2)
+
+# Checking partial-R2 values with Nakagawa and Schielzeth (2013) method for estimating DF.
+
+r2beta(model = RMR.m2, partial = TRUE, method = "nsj") # Mass R^2 has greatest contribution.
+
+# Checking variance explained by randon intercepts
+summary(RMR.m2)$varcor
+
+# Again, maternal ID alone explaining zero variance. Plotting residuals by fitteds
+
+{
+  Res.Alone <- ggplot(
+    data = data.frame("Res" = residuals(RMR.m2, type = "deviance")),
+    aes(x = 1:nrow(RMR.NMS.Data), y = Res)
+  ) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "mediumseagreen", alpha = 0.5) +
+    xlab("Row Number") +
+    ylab("Deviance Residuals")
+
+  Res.by.Fit <- ggplot(data = data.frame(
+    "Res" = residuals(RMR.m2, type = "deviance"),
+    "Fit" = predict(RMR.m2)
+  ), aes(x = Fit, y = Res)) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "cornflowerblue", alpha = 0.5) +
+    xlab("Fitted Values") +
+    ylab("Deviance Residuals")
+
+  Res.by.Resp <- ggplot(data = data.frame(
+    "Res" = residuals(RMR.m2, type = "deviance"),
+    "Resp" = log(RMR.NMS.Data$RMR)
+  ), aes(x = Resp, y = Res)) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "mediumorchid", alpha = 0.5) +
+    xlab("Resting Metabolic Rate") +
+    ylab("Deviance Residuals")
+
+  QQNorm <- ggplot(data.frame(
+    "Res" = residuals(RMR.m2, type = "deviance"),
+    "Fit" = predict(RMR.m2)
+  ), aes(sample = Res)) +
+    stat_qq(colour = "gold") +
+    stat_qq_line() +
+    my.theme +
+    theme_bw()
+}
+
+grid.arrange(Res.Alone, Res.by.Fit, Res.by.Resp, QQNorm, nrow = 2, top = "Resting Metabolic Rate Residuals")
+
+## Residuals similar to model 1.
+
+qqPlot(residuals(RMR.m2, type = "deviance"), ylab = "Deviance Residuals")
+
+# Again, generally within confidence intervals.
+
+{
+  Res.by.Mass <- ggplot(data = data.frame(
+    "Mass" = RMR.NMS.Data$Mass,
+    "Res" = residuals(RMR.m2)
+  ), aes(x = Mass, y = Res, colour = as.factor(RMR.NMS.Data$Mother.Acc))) +
+    theme_bw() +
+    geom_point(size = 3, alpha = 0.5) +
+    my.theme +
+    xlab("Mass (g)") +
+    ylab("Deviance Residuals") +
+    scale_colour_manual(values = c("royalblue", "gold2")) +
+    guides(colour = guide_legend(title = "Dam Acclimation \nTemperature"))
+
+  Res.by.Dam <- ggplot(data = data.frame(
+    "Dam" = as.factor(RMR.NMS.Data$Mother.Acc),
+    "Res" = residuals(RMR.m2)
+  ), aes(x = Dam, y = Res)) +
+    theme_bw() +
+    geom_boxplot(fill = "royalblue") +
+    my.theme.diag +
+    xlab("Dam Acclimation Temperature \n (Degrees C)") +
+    ylab("Deviance Residuals")
+
+  Res.by.Off <- ggplot(data = data.frame(
+    "Offspring" = as.factor(RMR.NMS.Data$Offspring.Acc),
+    "Res" = residuals(RMR.m2)
+  ), aes(x = Offspring, y = Res)) +
+    theme_bw() +
+    geom_boxplot(fill = "gold2") +
+    my.theme.diag +
+    xlab("Dam Acclimation Temperature \n (Degrees C)") +
+    ylab("Deviance Residuals")
+}
+
+layout <- rbind(c(1, 1), c(2, 3))
+grid.arrange(Res.by.Mass, Res.by.Dam, Res.by.Off, nrow = 2, top = "Resting Metabolic Rate Residuals", layout_matrix = layout)
+
+# Again, homoskedastic. Calculating p-values.
+
+dwdata.RMR.NMS.m2 <- data.frame(
+  term = c(rownames(summary(RMR.m2)$coefficients)),
+  estimate = c(summary(RMR.m2)$coefficients[1:4]),
+  std.error = c(summary(RMR.m2)$coefficients[5:8]),
+  statistic = c(summary(RMR.m2)$coefficients[9:12])
+)
+
+p.values.m2 <- c()
+for (i in 1:nrow(dwdata.RMR.NMS.m2)) {
+  p.values.m2[i] <- pt(abs(dwdata.RMR.NMS.m2$statistic[i]), df = 8, lower.tail = FALSE)
+}
+
+dwdata.RMR.NMS.m2$p.values <- round(p.values.m2, 3)
+dwdata.RMR.NMS.m2$term <- c("(Intercept)", "log Mass", "Offspring Acclimation Temperature", "Dam Acclimation Temperature")
+
+```
+### Testing model assumptions for resting metabic rate: model 3.
+```{r warning = FALSE, message = FALSE}
+
+RMR.m3 <- lmer(log(RMR) ~ log(Mass) + Offspring.Acc + Mother.Acc + Offspring.Acc:Mother.Acc +
+  (1 | Mother.ID) + (1 | Father.ID), REML = FALSE, data = RMR.NMS.Data)
+
+summary(RMR.m3)$varcor
+
+# As before, maternal ID alone explains nearly zero variance, but estimate is possible (thus, no singular fit error). Plotting residuals.
+
+{
+  Res.Alone <- ggplot(
+    data = data.frame("Res" = residuals(RMR.m3, type = "deviance")),
+    aes(x = 1:nrow(RMR.NMS.Data), y = Res)
+  ) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "mediumseagreen", alpha = 0.5) +
+    xlab("Row Number") +
+    ylab("Deviance Residuals")
+
+  Res.by.Fit <- ggplot(data = data.frame(
+    "Res" = residuals(RMR.m3, type = "deviance"),
+    "Fit" = predict(RMR.m3)
+  ), aes(x = Fit, y = Res)) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "cornflowerblue", alpha = 0.5) +
+    xlab("Fitted Values") +
+    ylab("Deviance Residuals")
+
+  Res.by.Resp <- ggplot(data = data.frame(
+    "Res" = residuals(RMR.m3, type = "deviance"),
+    "Resp" = log(RMR.NMS.Data$RMR)
+  ), aes(x = Resp, y = Res)) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "mediumorchid", alpha = 0.5) +
+    xlab("Resting Metabolic Rate") +
+    ylab("Deviance Residuals")
+
+  QQNorm <- ggplot(data.frame(
+    "Res" = residuals(RMR.m3, type = "deviance"),
+    "Fit" = predict(RMR.m3)
+  ), aes(sample = Res)) +
+    stat_qq(colour = "gold") +
+    stat_qq_line() +
+    my.theme +
+    theme_bw()
+}
+
+grid.arrange(Res.Alone, Res.by.Fit, Res.by.Resp, QQNorm, nrow = 2, top = "Resting Metabolic Rate Residuals")
+
+## Very subtle tails in residuals...
+
+qqPlot(residuals(RMR.m3, type = "deviance"), ylab = "Deviance Residuals")
+
+## But largely within confidence intervals.
+
+Resid.hist <- ggplot(
+  data.frame(Res = c(residuals(RMR.m3, type = "deviance")), Model = "Model1"),
+  aes(Res, fill = Model, colour = Model)
+) +
+  geom_histogram(alpha = 0.5, bins = 20) +
+  theme_bw() +
+  my.theme +
+  xlab("Deviance Residuals") +
+  ylab("Count") +
+  scale_fill_manual(
+    values =
+      c("firebrick")
+  ) +
+  scale_colour_manual(values = c("black")) +
+  theme(legend.position = "none") +
+  geom_density(alpha = 0.5, aes(y = 0.5 / 5 * ..count..))
+
+print(Resid.hist)
+
+# Very slightly bimodal, but acceptable. Assessing residuals across predictors.
+
+{
+  Res.by.Mass <- ggplot(data = data.frame(
+    "Mass" = RMR.NMS.Data$Mass,
+    "Res" = residuals(RMR.m2)
+  ), aes(x = Mass, y = Res, colour = as.factor(RMR.NMS.Data$Mother.Acc))) +
+    theme_bw() +
+    geom_point(size = 3, alpha = 0.5) +
+    my.theme.diag +
+    xlab("Mass (g)") +
+    ylab("Deviance Residuals") +
+    scale_colour_manual(values = c("royalblue", "gold2")) +
+    guides(colour = guide_legend(title = "Dam Acclimation Temperature")) +
+    theme(legend.position = "top")
+
+  Res.by.Dam <- ggplot(data = data.frame(
+    "Dam" = as.factor(RMR.NMS.Data$Mother.Acc),
+    "Res" = residuals(RMR.m2)
+  ), aes(x = Dam, y = Res)) +
+    theme_bw() +
+    geom_boxplot(fill = "royalblue") +
+    my.theme.diag +
+    xlab("Dam Acclimation Temperature \n (Degrees C)") +
+    ylab("Deviance Residuals")
+
+  Res.by.Off <- ggplot(data = data.frame(
+    "Offspring" = as.factor(RMR.NMS.Data$Offspring.Acc),
+    "Res" = residuals(RMR.m2)
+  ), aes(x = Offspring, y = Res)) +
+    theme_bw() +
+    geom_boxplot(fill = "gold2") +
+    my.theme.diag +
+    xlab("Dam Acclimation Temperature \n (Degrees C)") +
+    ylab("Deviance Residuals")
+
+  Off.by.Dam <- ggplot(data = data.frame(
+    "Dam" = as.factor(RMR.NMS.Data$Mother.Acc),
+    "Res" = residuals(RMR.m2)
+  ), aes(x = Dam, y = Res, fill = as.factor(RMR.NMS.Data$Offspring.Acc))) +
+    theme_bw() +
+    geom_boxplot() +
+    my.theme.diag +
+    scale_fill_manual(values = c("firebrick", "coral")) +
+    xlab("Dam Acclimation Temperature (Degrees C)") +
+    ylab("Deviance Residuals") +
+    guides(fill = guide_legend(title = "Offspring Acclimation \n Temperature")) +
+    theme(legend.position = "top")
+}
+
+layout <- rbind(c(1, 1, 2, 3), c(1, 1, 4, 4))
+grid.arrange(Res.by.Mass, Res.by.Dam, Res.by.Off, Off.by.Dam, nrow = 2, top = "Resting Metabolic Rate Residuals", layout_matrix = layout)
+
+# Appear acceptably homoskedastic. Calculating p-values.
+
+dwdata.RMR.NMS.m3 <- data.frame(
+  term = c(rownames(summary(RMR.m3)$coefficients)),
+  estimate = c(summary(RMR.m3)$coefficients[1:5]),
+  std.error = c(summary(RMR.m3)$coefficients[6:10]),
+  statistic = c(summary(RMR.m3)$coefficients[11:15])
+)
+
+p.values.m3 <- c()
+for (i in 1:nrow(dwdata.RMR.NMS.m3)) {
+  p.values.m3[i] <- pt(abs(dwdata.RMR.NMS.m3$statistic[i]), df = 8, lower.tail = FALSE)
+}
+
+dwdata.RMR.NMS.m3$p.values <- round(p.values.m3, 3)
+dwdata.RMR.NMS.m3$term <- c("(Intercept)", "log Mass", "Offspring Acclimation Temperature", "Dam Acclimation Temperature", "Dam Acclimation Temperature :\n Offspring Acclimation Temperature")
+
+## Comparing models by plot.
+
+dwdata.RMR.NMS.m1 <- dwdata.RMR.NMS.m1 %>%
+  mutate(model = "Model 1")
+dwdata.RMR.NMS.m2 <- dwdata.RMR.NMS.m2 %>%
+  mutate(model = "Model 2")
+dwdata.RMR.NMS.m3 <- dwdata.RMR.NMS.m3 %>%
+  mutate(model = "Model 3")
+
+RMR.NMS.Models <- rbind(dwdata.RMR.NMS.m1, dwdata.RMR.NMS.m2, dwdata.RMR.NMS.m3)
+
+RMR.NMS.Models$estimate <- RMR.NMS.Models$estimate * 5
+RMR.NMS.Models$std.error <- RMR.NMS.Models$std.error * 5
+
+RMR.NMS.Models %>%
+  dwplot(style = "distribution", show_intercept = FALSE) + theme_bw() +
+  theme(legend.justification = c(-0.1, -0.1), legend.position = c(0.7, 0.01)) + my.theme.dw +
+  xlab("Coefficient") + ylab("") + geom_vline(xintercept = 0, colour = "black", linetype = 2) +
+  scale_fill_manual(values = c("mediumseagreen", "mediumorchid", "cornflowerblue")) +
+  scale_colour_manual(values = c("black", "black", "black")) + scale_x_continuous(
+    limits = c(-5.0, 5.0),
+    breaks = c(-5.0, -2.5, 0, 2.5, 5.0), label = c("-1.00", "-0.50", "0", "0.50", "1.00")
+  )
+
+ggsave("log Resting Metabolic Rate Model Comparisons.jpeg", dpi = 1000, limitsize = TRUE)
+
+RMR.NMS.Models$estimate <- RMR.NMS.Models$estimate / 5
+RMR.NMS.Models$std.error <- RMR.NMS.Models$std.error / 5
+
+RMR.NMS.Fit.m1 <- data.frame("Response" = c(log(RMR.NMS.Data$RMR)), "Fit" = c(predict(RMR.m1)))
+RMR.NMS.Fit.m2 <- data.frame("Response" = c(log(RMR.NMS.Data$RMR)), "Fit" = c(predict(RMR.m2)))
+RMR.NMS.Fit.m3 <- data.frame("Response" = c(log(RMR.NMS.Data$RMR)), "Fit" = c(predict(RMR.m3)))
+
+RMR.NMS.Fit.m1 <- RMR.NMS.Fit.m1 %>%
+  mutate(model = "Model 1")
+RMR.NMS.Fit.m2 <- RMR.NMS.Fit.m2 %>%
+  mutate(model = "Model 2")
+RMR.NMS.Fit.m3 <- RMR.NMS.Fit.m3 %>%
+  mutate(model = "Model 3")
+
+RMR.NMS.Fit.All <- rbind(RMR.NMS.Fit.m1, RMR.NMS.Fit.m2, RMR.NMS.Fit.m3)
+
+RMR.NMS.Fits <- ggplot(data = RMR.NMS.Fit.All, aes(
+  x = Fit, y = Response, fill = model, colour = model,
+  linetype = model
+)) +
+  theme_bw() +
+  my.theme +
+  geom_point(pch = 21, size = 3, alpha = 0.5) +
+  geom_smooth(method = "lm") +
+  xlab("Predicted log Resting Metabolic Rate \n (log mg O2/h)") +
+  ylab("Measured log Resting \n Metabolic Rate \n (log mg O2/h)") +
+  scale_fill_manual(values = c(
+    "mediumseagreen",
+    "mediumorchid", "cornflowerblue"
+  )) +
+  scale_colour_manual(values = c(
+    "black",
+    "black", "black"
+  )) +
+  theme(legend.title = element_blank())
+
+print(RMR.NMS.Fits)
+ggsave("log Resting Metabolic Rate Model Fit Comparisons.jpeg", dpi = 1000, limitsize = TRUE)
+
+```
+### Next, testing model assumptions for peak metabic rate: model 1.
+```{r warning = FALSE, message = FALSE}
+
+MMR.m1 <- lmer(log(MMR) ~ log(Mass) + (1 | Mother.ID) + (1 | Father.ID), REML = FALSE, data = MMR.NMS.Data)
+
+# R^2 values?
+
+r.squaredGLMM(MMR.m1) # Reasonable variance explained
+summary(MMR.m1)$varcor # Maternal effect non-detectable (as random intercept)
+
+{
+  Res.Alone <- ggplot(
+    data = data.frame("Res" = residuals(MMR.m1, type = "deviance")),
+    aes(x = 1:nrow(MMR.NMS.Data), y = Res)
+  ) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "mediumseagreen", alpha = 0.5) +
+    xlab("Row Number") +
+    ylab("Deviance Residuals")
+
+  Res.by.Fit <- ggplot(data = data.frame(
+    "Res" = residuals(MMR.m1, type = "deviance"),
+    "Fit" = predict(MMR.m1)
+  ), aes(x = Fit, y = Res)) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "cornflowerblue", alpha = 0.5) +
+    xlab("Fitted Values") +
+    ylab("Deviance Residuals")
+
+  Res.by.Resp <- ggplot(data = data.frame(
+    "Res" = residuals(MMR.m1, type = "deviance"),
+    "Resp" = MMR.NMS.Data$MMR
+  ), aes(x = Resp, y = Res)) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "mediumorchid", alpha = 0.5) +
+    xlab("Resting Metabolic Rate") +
+    ylab("Deviance Residuals")
+
+  QQNorm <- ggplot(data.frame(
+    "Res" = residuals(MMR.m1, type = "deviance"),
+    "Fit" = predict(MMR.m1)
+  ), aes(sample = Res)) +
+    stat_qq(colour = "gold") +
+    stat_qq_line() +
+    my.theme +
+    theme_bw()
+}
+
+grid.arrange(Res.Alone, Res.by.Fit, Res.by.Resp, QQNorm, nrow = 2, top = "Peak Metabolic Rate Residuals")
+
+# Wow! One very destinct outlier. Checking individual.
+
+log(MMR.NMS.Data[which(residuals(MMR.m1, type = "deviance") < -2.0), "MMR"])
+MMR.NMS.Data %>%
+  summarise(Mean_MMR = mean(log(MMR), na.rm = T), "LC" = mean(log(MMR), na.rm = T) - 4 * sd(log(MMR), na.rm = T))
+
+# Remarkably low peak metabolic rate and absolute aerobic scope. Removing from both datasets.
+
+MMR.NMS.Data <- MMR.NMS.Data[-c(which(residuals(MMR.m1, type = "deviance") < -2.0)), ]
+	
+```
+## Recalculting AICc values for peak metabolic rate.
+```{r warning = FALSE, message = FALSE}
+
+MMR.model <- lmer(log(MMR) ~ Mother.Acc * Father.Acc * Offspring.Acc + log(Mass) + (1 | Mother.ID) + (1 | Father.ID), REML = FALSE, data = MMR.NMS.Data)
+
+AIC.Results.MMR <- subset(dredge(MMR.model, rank = "AICc", extra = list(R2 = function(x) r.squaredGLMM(x))), delta < 2)
+
+Select.Models.MMR <- c()
+Delta.MMR <- c()
+Response <- c()
+Marg.R2 <- c()
+Cond.R2 <- c()
+
+for (i in 1:length(attr(AIC.Results.MMR, "model.calls"))) {
+  Select.Models.MMR[i] <- gsub(".*~ ", "", paste(attr(AIC.Results.MMR, "model.calls")[[i]])[2])
+  Delta.MMR[i] <- AIC.Results.MMR$delta[i]
+  Response[i] <- gsub(" ~.*", "", paste(attr(AIC.Results.MMR, "model.calls")[[i]])[2])
+  Marg.R2[i] <- AIC.Results.MMR$R21[i]
+  Cond.R2[i] <- AIC.Results.MMR$R22[i]
+  if (i == length(attr(AIC.Results.MMR, "model.calls"))) {
+    Table <- data.frame(
+      "Reponse.Type" = "Mass Independant", "Response" = Response,
+      "Delta.AIC" = Delta.MMR, "Marginal.R2" = Marg.R2, "Conditional.R2" = Cond.R2,
+      "Equation" = Select.Models.MMR
+    )
+    assign(paste("AIC.Selection", "MMR", sep = "_"), Table)
+  }
+}
+
+AIC.Selection.NMS <- rbind(AIC.Selection_NMS_1, AIC.Selection_MMR, AIC.Selection_NMS_3)
+View(AIC.Selection.NMS)
+write.csv(AIC.Selection.NMS, "Model_AIC_Final.csv", row.names = FALSE)
+
+```
+### Reassessing model assumptions for peak metabic rate: model 1.
+```{r warning = FALSE, message = FALSE}
+
+MMR.m1 <- lmer(log(MMR) ~ log(Mass) + Offspring.Acc + (1 | Mother.ID) + (1 | Father.ID), REML = FALSE, data = MMR.NMS.Data)
+
+# Checking R^2 values
+
+r.squaredGLMM(MMR.m1) # Considerable improvement
+r2beta(model = MMR.m1, partial = TRUE, method = "nsj") # Mass explains 50.5% of variation.
+
+summary(MMR.m1)$AICtab[1]
+
+# AIC dramatically improved. Checking contribution of random intercepts
+
+summary(MMR.m1)$varcor
+
+# Maternal ID again explaining no residual variance. Residual diagnostics:
+
+{
+  Res.Alone <- ggplot(
+    data = data.frame("Res" = residuals(MMR.m1, type = "deviance")),
+    aes(x = 1:nrow(MMR.NMS.Data), y = Res)
+  ) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "mediumseagreen", alpha = 0.5) +
+    xlab("Row Number") +
+    ylab("Deviance Residuals")
+
+  Res.by.Fit <- ggplot(data = data.frame(
+    "Res" = residuals(MMR.m1, type = "deviance"),
+    "Fit" = predict(MMR.m1)
+  ), aes(x = Fit, y = Res)) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "cornflowerblue", alpha = 0.5) +
+    xlab("Fitted Values") +
+    ylab("Deviance Residuals")
+
+  Res.by.Resp <- ggplot(data = data.frame(
+    "Res" = residuals(MMR.m1, type = "deviance"),
+    "Resp" = MMR.NMS.Data$MMR
+  ), aes(x = Resp, y = Res)) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "mediumorchid", alpha = 0.5) +
+    xlab("Resting Metabolic Rate") +
+    ylab("Deviance Residuals")
+
+  QQNorm <- ggplot(data.frame(
+    "Res" = residuals(MMR.m1, type = "deviance"),
+    "Fit" = predict(MMR.m1)
+  ), aes(sample = Res)) +
+    stat_qq(colour = "gold") +
+    stat_qq_line() +
+    my.theme +
+    theme_bw()
+}
+
+grid.arrange(Res.Alone, Res.by.Fit, Res.by.Resp, QQNorm, nrow = 2, top = "Peak Metabolic Rate Residuals")
+qqPlot(residuals(MMR.m1, type = "deviance"), ylab = "Deviance Residuals")
+
+# Residuals subtly non-normal. Double-checking with a histogram
+
+Resid.hist <- ggplot(
+  data.frame(Res = c(residuals(MMR.m1, type = "deviance")), Model = "Model1"),
+  aes(Res, fill = Model, colour = Model)
+) +
+  geom_histogram(alpha = 0.5, bins = 20) +
+  theme_bw() +
+  my.theme +
+  xlab("Deviance Residuals") +
+  ylab("Count") +
+  scale_fill_manual(
+    values =
+      c("black")
+  ) +
+  scale_colour_manual(values = c("navajowhite")) +
+  theme(legend.position = "none") +
+  geom_density(alpha = 0.5, aes(y = 0.2 / 5 * ..count..))
+
+print(Resid.hist)
+
+# Not bad, although appearing slightly bimodal. This could, simply, be a consequence of limited data. Checking for heteroskedasticity across predictor variables nonetheless.
+
+{
+  Res.by.Mass <- ggplot(data = data.frame(
+    "Mass" = RMR.NMS.Data$Mass,
+    "Res" = residuals(RMR.m2)
+  ), aes(x = Mass, y = Res, colour = as.factor(RMR.NMS.Data$Offspring.Acc))) +
+    theme_bw() +
+    geom_point(size = 3, alpha = 0.5) +
+    my.theme.diag +
+    xlab("Mass (g)") +
+    ylab("Deviance Residuals") +
+    scale_colour_manual(values = c("royalblue", "gold2")) +
+    guides(colour = guide_legend(title = "Offspring Acclimation Temperature")) +
+    theme(legend.position = "top")
+
+  Res.by.Off <- ggplot(data = data.frame(
+    "Off" = as.factor(RMR.NMS.Data$Offspring.Acc),
+    "Res" = residuals(RMR.m2)
+  ), aes(x = Off, y = Res)) +
+    theme_bw() +
+    geom_boxplot(fill = "royalblue") +
+    my.theme.diag +
+    xlab("Offspring Acclimation Temperature (Degrees C)") +
+    ylab("Deviance Residuals")
+
+  QQNorm.Diag <- ggplot(
+    data.frame(
+      "Res" = residuals(MMR.m1, type = "deviance"),
+      "Fit" = predict(MMR.m1), "Off" = as.factor(MMR.NMS.Data$Offspring.Acc)
+    ),
+    aes(sample = Res, colour = Off)
+  ) +
+    stat_qq() +
+    stat_qq_line() +
+    my.theme +
+    theme_bw() +
+    scale_colour_manual(values = c("black", "thistle")) +
+    theme(legend.position = "top") +
+    guides(colour = guide_legend(title = "Offspring Acclimation Temperature"))
+}
+
+layout <- rbind(c(1, 1, 2, 2), c(NA, 3, 3, NA))
+grid.arrange(Res.by.Mass, Res.by.Off, QQNorm.Diag, nrow = 2, top = "Peak Metabolic Rate Residuals", layout_matrix = layout)
+
+# No clear heteroskedasticity, nor difference in sample size. Assessing with a histogram.
+
+Resid.hist <- ggplot(
+  data.frame(
+    Res = c(residuals(MMR.m1, type = "deviance")),
+    "Offspring" = as.factor(MMR.NMS.Data$Offspring.Acc)
+  ),
+  aes(Res, fill = Offspring, colour = Offspring)
+) +
+  geom_histogram(alpha = 0.5, bins = 20) +
+  theme_bw() +
+  my.theme +
+  xlab("Deviance Residuals") +
+  ylab("Count") +
+  scale_fill_manual(
+    values =
+      c("black", "mediumorchid")
+  ) +
+  scale_colour_manual(values = c("white", "black")) +
+  theme(legend.position = "none") +
+  geom_density(alpha = 0.5, aes(y = 0.2 / 4 * ..count..))
+
+print(Resid.hist)
+
+## Equivalent data distributions. Continuing on to produce p-values.
+
+dwdata.MMR.NMS.m1 <- data.frame(
+  term = c(rownames(summary(MMR.m1)$coefficients)),
+  estimate = c(summary(MMR.m1)$coefficients[1:3]),
+  std.error = c(summary(MMR.m1)$coefficients[4:6]),
+  statistic = c(summary(MMR.m1)$coefficients[7:9])
+)
+
+p.values.m1 <- c()
+for (i in 1:nrow(dwdata.MMR.NMS.m1)) {
+  p.values.m1[i] <- pt(abs(dwdata.MMR.NMS.m1$statistic[i]), df = 8, lower.tail = FALSE)
+}
+
+dwdata.MMR.NMS.m1$p.values <- round(p.values.m1, 3)
+dwdata.MMR.NMS.m1$term <- c("(Intercept)", "log Mass", "Offspring Acclimation Temperature")
+
+```
+### Testing model assumptions for peak metabic rate: model 2.
+```{r warning = FALSE, message = FALSE}
+
+MMR.m2 <- lmer(log(MMR) ~ log(Mass) + Offspring.Acc + Father.Acc + (1 | Mother.ID) + (1 | Father.ID), REML = FALSE, data = MMR.NMS.Data)
+
+# Contribution of random intercepts?
+
+summary(MMR.m2)$varcor
+
+# Maternal and paternal ID explain very little residual variance.
+
+{
+  Res.Alone <- ggplot(
+    data = data.frame("Res" = residuals(MMR.m2, type = "deviance")),
+    aes(x = 1:nrow(MMR.NMS.Data), y = Res)
+  ) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "mediumseagreen", alpha = 0.5) +
+    xlab("Row Number") +
+    ylab("Deviance Residuals")
+
+  Res.by.Fit <- ggplot(data = data.frame(
+    "Res" = residuals(MMR.m2, type = "deviance"),
+    "Fit" = predict(MMR.m2)
+  ), aes(x = Fit, y = Res)) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "cornflowerblue", alpha = 0.5) +
+    xlab("Fitted Values") +
+    ylab("Deviance Residuals")
+
+  Res.by.Resp <- ggplot(data = data.frame(
+    "Res" = residuals(MMR.m2, type = "deviance"),
+    "Resp" = MMR.NMS.Data$MMR
+  ), aes(x = Resp, y = Res)) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "mediumorchid", alpha = 0.5) +
+    xlab("Resting Metabolic Rate") +
+    ylab("Deviance Residuals")
+
+  QQNorm <- ggplot(data.frame(
+    "Res" = residuals(MMR.m2, type = "deviance"),
+    "Fit" = predict(MMR.m2)
+  ), aes(sample = Res)) +
+    stat_qq(colour = "gold") +
+    stat_qq_line() +
+    my.theme +
+    theme_bw()
+}
+
+grid.arrange(Res.Alone, Res.by.Fit, Res.by.Resp, QQNorm, nrow = 2, top = "Peak Metabolic Rate Residuals")
+
+# Residuals appear fair, although straying from normality as observed before.
+
+qqPlot(residuals(MMR.m2, type = "deviance"), ylab = "Deviance Residuals")
+
+Resid.hist <- ggplot(
+  data.frame(Res = c(residuals(MMR.m2, type = "deviance")), Model = "Model1"),
+  aes(Res, fill = Model, colour = Model)
+) +
+  geom_histogram(alpha = 0.5, bins = 20) +
+  theme_bw() +
+  my.theme +
+  xlab("Deviance Residuals") +
+  ylab("Count") +
+  scale_fill_manual(
+    values =
+      c("cornflowerblue")
+  ) +
+  scale_colour_manual(values = c("black")) +
+  theme(legend.position = "none") +
+  geom_density(alpha = 0.5, aes(y = 0.2 / 5 * ..count..))
+
+print(Resid.hist)
+
+# Limited concern in histogram. Assessing parameter-specific variance.
+
+{
+  Res.by.Mass <- ggplot(data = data.frame(
+    "Mass" = MMR.NMS.Data$Mass,
+    "Res" = residuals(MMR.m2, type = "deviance")
+  ), aes(
+    x = Mass, y = Res,
+    colour = as.factor(MMR.NMS.Data$Offspring.Acc)
+  )) +
+    theme_bw() +
+    geom_point(size = 3, alpha = 0.5) +
+    my.theme.diag +
+    xlab("Mass (g)") +
+    ylab("Deviance Residuals") +
+    scale_colour_manual(values = c("royalblue", "gold2")) +
+    guides(colour = guide_legend(title = "Offspring Acclimation Temperature")) +
+    theme(legend.position = "top")
+
+  Res.by.Off <- ggplot(data = data.frame(
+    "Off" = as.factor(MMR.NMS.Data$Offspring.Acc),
+    "Res" = residuals(MMR.m2, type = "deviance")
+  ), aes(x = Off, y = Res)) +
+    theme_bw() +
+    geom_boxplot(fill = "royalblue") +
+    my.theme.diag +
+    xlab("Offspring Acclimation Temperature (Degrees C)") +
+    ylab("Deviance Residuals")
+
+  Res.by.Pat <- ggplot(data = data.frame(
+    "Pat" = as.factor(MMR.NMS.Data$Father.Acc),
+    "Res" = residuals(MMR.m2, type = "deviance")
+  ), aes(x = Pat, y = Res)) +
+    theme_bw() +
+    geom_boxplot(fill = "mediumseagreen") +
+    my.theme.diag +
+    xlab("Sire Acclimation Temperature (Degrees C)") +
+    ylab("Deviance Residuals")
+
+  QQNorm.by.Off <- ggplot(
+    data.frame(
+      "Res" = residuals(MMR.m2, type = "deviance"),
+      "Fit" = predict(MMR.m2), "Off" = as.factor(MMR.NMS.Data$Offspring.Acc)
+    ),
+    aes(sample = Res, colour = Off)
+  ) +
+    stat_qq() +
+    stat_qq_line() +
+    my.theme +
+    theme_bw() +
+    scale_colour_manual(values = c("mediumseagreen", "mediumorchid")) +
+    theme(legend.position = "top") +
+    guides(colour = guide_legend(title = "Offspring Acclimation Temperature"))
+
+  QQNorm.by.Pat <- ggplot(
+    data.frame(
+      "Res" = residuals(MMR.m2, type = "deviance"),
+      "Fit" = predict(MMR.m2), "Pat" = as.factor(MMR.NMS.Data$Father.Acc)
+    ),
+    aes(sample = Res, colour = Pat)
+  ) +
+    stat_qq() +
+    stat_qq_line() +
+    my.theme +
+    theme_bw() +
+    scale_colour_manual(values = c("royalblue", "gold2")) +
+    theme(legend.position = "top") +
+    guides(colour = guide_legend(title = "Sire Acclimation Temperature"))
+}
+
+grid.arrange(Res.by.Mass, Res.by.Off, Res.by.Pat, QQNorm.by.Off, QQNorm.by.Pat, nrow = 3, top = "Peak Metabolic Rate Residuals")
+
+# Perhaps a slight heterogeneity across offspring acclimation temperature, but very minimal. Little reason for concern.
+# Calculating p-values.
+
+dwdata.MMR.NMS.m2 <- data.frame(
+  term = c(rownames(summary(MMR.m2)$coefficients)),
+  estimate = c(summary(MMR.m2)$coefficients[1:4]),
+  std.error = c(summary(MMR.m2)$coefficients[5:8]),
+  statistic = c(summary(MMR.m2)$coefficients[9:12])
+)
+
+p.values.m2 <- c()
+for (i in 1:nrow(dwdata.MMR.NMS.m2)) {
+  p.values.m2[i] <- pt(abs(dwdata.MMR.NMS.m2$statistic[i]), df = 8, lower.tail = FALSE)
+}
+
+dwdata.MMR.NMS.m2$p.values <- round(p.values.m2, 3)
+dwdata.MMR.NMS.m2$term <- c("(Intercept)", "log Mass", "Offspring Acclimation Temperature", "Sire Acclimation Temperature")
+
+```
+### Testing model assumptions for peak metabic rate: model 3.
+```{r warning = FALSE, message = FALSE}
+
+MMR.m3 <- lmer(log(MMR) ~ log(Mass) + Offspring.Acc + Mother.Acc + (1 | Mother.ID) + (1 | Father.ID), REML = FALSE, data = MMR.NMS.Data)
+
+summary(MMR.m3)$varcor
+
+# Paternal ID alone explaining residual variance. This pattern appears rather consistent.
+
+{
+  Res.Alone <- ggplot(
+    data = data.frame("Res" = residuals(MMR.m3, type = "deviance")),
+    aes(x = 1:nrow(MMR.NMS.Data), y = Res)
+  ) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "mediumseagreen", alpha = 0.5) +
+    xlab("Row Number") +
+    ylab("Deviance Residuals")
+
+  Res.by.Fit <- ggplot(
+    data = data.frame("Res" = residuals(MMR.m3), "Fit" = predict(MMR.m3)),
+    aes(x = Fit, y = Res)
+  ) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "cornflowerblue", alpha = 0.5) +
+    xlab("Fitted Values") +
+    ylab("Deviance Residuals")
+
+  Res.by.Resp <- ggplot(data = data.frame(
+    "Res" = residuals(MMR.m3), "Resp" =
+      MMR.NMS.Data$MMR
+  ), aes(x = Resp, y = Res)) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "mediumorchid", alpha = 0.5) +
+    xlab("Resting Metabolic Rate") +
+    ylab("Deviance Residuals")
+
+  QQNorm <- ggplot(
+    data.frame("Res" = residuals(MMR.m3), "Fit" = predict(MMR.m2)),
+    aes(sample = Res)
+  ) +
+    stat_qq(colour = "gold") +
+    stat_qq_line() +
+    my.theme +
+    theme_bw()
+}
+
+grid.arrange(Res.Alone, Res.by.Fit, Res.by.Resp, QQNorm, nrow = 2, top = "Peak Metabolic Rate Residuals")
+
+# Similar patterns to previous two models.
+
+Resid.hist <- ggplot(
+  data.frame(Res = c(residuals(MMR.m3, type = "deviance")), Model = "Model1"),
+  aes(Res, fill = Model, colour = Model)
+) +
+  geom_histogram(alpha = 0.5, bins = 20) +
+  theme_bw() +
+  my.theme +
+  xlab("Deviance Residuals") +
+  ylab("Count") +
+  scale_fill_manual(
+    values =
+      c("cornflowerblue")
+  ) +
+  scale_colour_manual(values = c("black")) +
+  theme(legend.position = "none") +
+  geom_density(alpha = 0.5, aes(y = 0.2 / 5 * ..count..))
+
+print(Resid.hist) # Little reason for concern. Plotting residuals by predictors.
+
+{
+  Res.by.Mass <- ggplot(data = data.frame(
+    "Mass" = MMR.NMS.Data$Mass,
+    "Res" = residuals(MMR.m3, type = "deviance")
+  ), aes(
+    x = Mass, y = Res,
+    colour = as.factor(MMR.NMS.Data$Offspring.Acc)
+  )) +
+    theme_bw() +
+    geom_point(size = 3, alpha = 0.5) +
+    my.theme.diag +
+    xlab("Mass (g)") +
+    ylab("Deviance Residuals") +
+    scale_colour_manual(values = c("royalblue", "gold2")) +
+    guides(colour = guide_legend(title = "Offspring Acclimation Temperature")) +
+    theme(legend.position = "top")
+
+  Res.by.Off <- ggplot(data = data.frame(
+    "Off" = as.factor(MMR.NMS.Data$Offspring.Acc),
+    "Res" = residuals(MMR.m3, type = "deviance")
+  ), aes(x = Off, y = Res)) +
+    theme_bw() +
+    geom_boxplot(fill = "royalblue") +
+    my.theme.diag +
+    xlab("Offspring Acclimation Temperature (Degrees C)") +
+    ylab("Deviance Residuals")
+
+  Res.by.Mat <- ggplot(data = data.frame(
+    "Mat" = as.factor(MMR.NMS.Data$Mother.Acc),
+    "Res" = residuals(MMR.m3, type = "deviance")
+  ), aes(x = Mat, y = Res)) +
+    theme_bw() +
+    geom_boxplot(fill = "mediumseagreen") +
+    my.theme.diag +
+    xlab("Dam Acclimation Temperature (Degrees C)") +
+    ylab("Deviance Residuals")
+
+  QQNorm.by.Off <- ggplot(
+    data.frame(
+      "Res" = residuals(MMR.m3, type = "deviance"),
+      "Fit" = predict(MMR.m3), "Off" = as.factor(MMR.NMS.Data$Offspring.Acc)
+    ),
+    aes(sample = Res, colour = Off)
+  ) +
+    stat_qq() +
+    stat_qq_line() +
+    my.theme +
+    theme_bw() +
+    scale_colour_manual(values = c("mediumseagreen", "mediumorchid")) +
+    theme(legend.position = "top") +
+    guides(colour = guide_legend(title = "Offspring Acclimation Temperature"))
+
+  QQNorm.by.Mat <- ggplot(
+    data.frame(
+      "Res" = residuals(MMR.m3, type = "deviance"),
+      "Fit" = predict(MMR.m3), "Mat" = as.factor(MMR.NMS.Data$Mother.Acc)
+    ),
+    aes(sample = Res, colour = Mat)
+  ) +
+    stat_qq() +
+    stat_qq_line() +
+    my.theme +
+    theme_bw() +
+    scale_colour_manual(values = c("royalblue", "gold2")) +
+    theme(legend.position = "top") +
+    guides(colour = guide_legend(title = "Dam Acclimation Temperature"))
+}
+
+grid.arrange(Res.by.Mass, Res.by.Off, Res.by.Mat, QQNorm.by.Off, QQNorm.by.Pat, nrow = 3, top = "Peak Metabolic Rate Residuals")
+
+## Similar variance as above two models. Perhaps an interaction between mass and temperature categories
+## could be considered? Calculating p-values.
+
+dwdata.MMR.NMS.m3 <- data.frame(
+  term = c(rownames(summary(MMR.m3)$coefficients)),
+  estimate = c(summary(MMR.m3)$coefficients[1:4]),
+  std.error = c(summary(MMR.m3)$coefficients[5:8]),
+  statistic = c(summary(MMR.m3)$coefficients[9:12])
+)
+
+p.values.m3 <- c()
+for (i in 1:nrow(dwdata.MMR.NMS.m3)) {
+  p.values.m3[i] <- pt(abs(dwdata.MMR.NMS.m3$statistic[i]), df = 8, lower.tail = FALSE)
+}
+
+dwdata.MMR.NMS.m3$p.values <- round(p.values.m3, 3)
+dwdata.MMR.NMS.m3$term <- c("(Intercept)", "log Mass", "Offspring Acclimation Temperature", "Dam Acclimation Temperature")
+
+## Comparing model outputs by plots
+
+dwdata.MMR.NMS.m1 <- dwdata.MMR.NMS.m1 %>%
+  mutate(model = "Model 1")
+dwdata.MMR.NMS.m2 <- dwdata.MMR.NMS.m2 %>%
+  mutate(model = "Model 2")
+dwdata.MMR.NMS.m3 <- dwdata.MMR.NMS.m3 %>%
+  mutate(model = "Model 3")
+
+MMR.NMS.Models <- rbind(dwdata.MMR.NMS.m1, dwdata.MMR.NMS.m2, dwdata.MMR.NMS.m3)
+MMR.NMS.Models$estimate <- MMR.NMS.Models$estimate * 8
+MMR.NMS.Models$std.error <- MMR.NMS.Models$std.error * 8
+
+MMR.NMS.Models %>%
+  dwplot(style = "distribution", show_intercept = FALSE) + theme_bw() +
+  theme(
+    legend.justification = c(-0.1, -0.1),
+    legend.position = c(0, 0.01)
+  ) + my.theme.dw + xlab("Coefficient") + ylab("") +
+  geom_vline(xintercept = 0, colour = "black", linetype = 2) +
+  scale_fill_manual(values = c("mediumseagreen", "mediumorchid", "cornflowerblue")) +
+  scale_colour_manual(values = c("black", "black", "black")) + scale_x_continuous(
+    limits = c(-8.0, 8.0),
+    breaks = c(-8.0, -4.0, 0, 4.0, 8.0), label = c("-1.00", "-0.50", "0", "0.50", "1.00")
+  )
+
+ggsave("log Peak Metabolic Rate Model Comparisons.jpeg", dpi = 1000, limitsize = TRUE)
+
+MMR.NMS.Models$estimate <- MMR.NMS.Models$estimate / 8
+MMR.NMS.Models$std.error <- MMR.NMS.Models$std.error / 8
+
+{
+  MMR.NMS.Fit.m1 <- data.frame(
+    "Response" = c(log(MMR.NMS.Data$MMR)), "Fit" = c(predict(MMR.m1)),
+    "Mass" = c(log(MMR.NMS.Data$Mass))
+  )
+  MMR.NMS.Fit.m2 <- data.frame(
+    "Response" = c(log(MMR.NMS.Data$MMR)), "Fit" = c(predict(MMR.m2)),
+    "Mass" = c(log(MMR.NMS.Data$Mass))
+  )
+  MMR.NMS.Fit.m3 <- data.frame(
+    "Response" = c(log(MMR.NMS.Data$MMR)), "Fit" = c(predict(MMR.m3)),
+    "Mass" = c(log(MMR.NMS.Data$Mass))
+  )
+}
+
+MMR.NMS.Fit.m1 <- MMR.NMS.Fit.m1 %>%
+  mutate(model = "Model 1")
+MMR.NMS.Fit.m2 <- MMR.NMS.Fit.m2 %>%
+  mutate(model = "Model 2")
+MMR.NMS.Fit.m3 <- MMR.NMS.Fit.m3 %>%
+  mutate(model = "Model 3")
+
+MMR.NMS.Fit.All <- rbind(MMR.NMS.Fit.m1, MMR.NMS.Fit.m2, MMR.NMS.Fit.m3)
+MMR.NMS.Fits <- ggplot(data = MMR.NMS.Fit.All, aes(
+  x = Fit, y = Response, fill = model, colour = model,
+  linetype = model
+)) +
+  theme_bw() +
+  my.theme +
+  geom_point(pch = 21, size = 3, alpha = 0.5) +
+  geom_smooth(method = "lm") +
+  xlab("Predicted log Resting Metabolic Rate \n (log mg O2/h)") +
+  ylab("Measured log Resting \n Metabolic Rate \n (log mg O2/h)") +
+  scale_fill_manual(values = c(
+    "mediumseagreen",
+    "mediumorchid", "cornflowerblue"
+  )) +
+  scale_colour_manual(values = c(
+    "black",
+    "black", "black"
+  )) +
+  theme(legend.title = element_blank())
+
+print(MMR.NMS.Fits)
+ggsave("log Peak Metabolic Rate Model Fit Comparisons.jpeg", dpi = 1000, limitsize = TRUE)
+
+# Very subtle differences between models.
+```
+
+### Amalgamating mass-independant results.
+```{r warning = FALSE, message = FALSE}
+
+require("plyr")
+
+R2.Dataframe <- ldply(lapply(list(CTM.model.m1, RMR.m1, RMR.m2, RMR.m3, MMR.m1, MMR.m2, MMR.m3), r.squaredGLMM), data.frame)
+
+{
+  CTM.NMS.DF1 <- subset(CTM.Models, model == "Model 1") %>%
+    mutate("df" = 8) %>%
+    mutate("Model Number" = "Model 1") %>%
+    mutate("Marginal R2" = R2.Dataframe[1, 1]) %>%
+    mutate("Conditional R2" = R2.Dataframe[1, 2]) %>%
+    mutate("AIC" = summary(CTM.model.m1)$AIC)
+
+  CTM.NMS.DF1$Response <- "Critical Thermal Maximum"
+
+  RMR.NMS.DF1 <- subset(RMR.NMS.Models, model == "Model 1") %>%
+    mutate("df" = 8) %>%
+    mutate("Model Number" = "Model 1") %>%
+    mutate("Marginal R2" = R2.Dataframe[2, 1]) %>%
+    mutate("Conditional R2" = R2.Dataframe[2, 2]) %>%
+    mutate("AIC" = summary(RMR.m1)$AICtab[1])
+
+  RMR.NMS.DF2 <- subset(RMR.NMS.Models, model == "Model 2") %>%
+    mutate("df" = 8) %>%
+    mutate("Model Number" = "Model 2") %>%
+    mutate("Marginal R2" = R2.Dataframe[3, 1]) %>%
+    mutate("Conditional R2" = R2.Dataframe[3, 2]) %>%
+    mutate("AIC" = summary(RMR.m2)$AICtab[1])
+
+  RMR.NMS.DF3 <- subset(RMR.NMS.Models, model == "Model 3") %>%
+    mutate("df" = 8) %>%
+    mutate("Model Number" = "Model 3") %>%
+    mutate("Marginal R2" = R2.Dataframe[4, 1]) %>%
+    mutate("Conditional R2" = R2.Dataframe[4, 2]) %>%
+    mutate("AIC" = summary(RMR.m3)$AICtab[1])
+
+  RMR.NMS.DF <- rbind(RMR.NMS.DF1, RMR.NMS.DF2, RMR.NMS.DF3)
+
+  RMR.NMS.DF$Response <- "Resting Metabolic Rate"
+  RMR.NMS.DF$Response <- "Resting Metabolic Rate"
+  RMR.NMS.DF$Response <- "Resting Metabolic Rate"
+
+  MMR.NMS.DF1 <- subset(MMR.NMS.Models, model == "Model 1") %>%
+    mutate("df" = 8) %>%
+    mutate("Model Number" = "Model 1") %>%
+    mutate("Marginal R2" = R2.Dataframe[5, 1]) %>%
+    mutate("Conditional R2" = R2.Dataframe[5, 2]) %>%
+    mutate("AIC" = summary(MMR.m1)$AICtab[1])
+
+  MMR.NMS.DF2 <- subset(MMR.NMS.Models, model == "Model 2") %>%
+    mutate("df" = 8) %>%
+    mutate("Model Number" = "Model 2") %>%
+    mutate("Marginal R2" = R2.Dataframe[6, 1]) %>%
+    mutate("Conditional R2" = R2.Dataframe[6, 2]) %>%
+    mutate("AIC" = summary(MMR.m2)$AICtab[1])
+
+  MMR.NMS.DF3 <- subset(MMR.NMS.Models, model == "Model 3") %>%
+    mutate("df" = 8) %>%
+    mutate("Model Number" = "Model 3") %>%
+    mutate("Marginal R2" = R2.Dataframe[7, 1]) %>%
+    mutate("Conditional R2" = R2.Dataframe[7, 2]) %>%
+    mutate("AIC" = summary(MMR.m3)$AICtab[1])
+
+  MMR.NMS.DF <- rbind(MMR.NMS.DF1, MMR.NMS.DF2, MMR.NMS.DF3)
+
+  MMR.NMS.DF$Response <- "Peak Metabolic Rate"
+  MMR.NMS.DF$Response <- "Peak Metabolic Rate"
+  MMR.NMS.DF$Response <- "Peak Metabolic Rate"
+}
+
+AllData.NMS <- rbind(CTM.NMS.DF1, RMR.NMS.DF, MMR.NMS.DF)
+
+AllData.NMS <- AllData.NMS %>%
+  select("Response", "Model Number", "term", "estimate", "std.error", "statistic", "df", "p.values", "AIC", "Marginal R2", "Conditional R2")
+colnames(AllData.NMS) <- c("Response Variable", "Model Number", "Model Parameter", "Estimate (beta)", "Std.Error", "T Statistic", "DF", "p", "AIC", "Marginal R2", "Conditional R2")
+
+New.Parameters <- c()
+for (i in 1:nrow(AllData.NMS)) {
+  New.Parameters[i] <- gsub("\n", "", AllData.NMS$"Model Parameter"[i])
+}
+
+AllData.NMS$"Model Parameter" <- New.Parameters
+rownames(AllData.NMS) <- c(1:nrow(AllData.NMS))
+View(AllData.NMS)
+write.csv(AllData.NMS, "Mass Independant Model Output Results - Final.csv")
+
+```
+
+### Producing final plots
+```{r warning = FALSE, message = FALSE}
+
+## Critical thermal maximum
+
+# Top model 
+
+CTM.model.m1 <- lme(CTM ~ Offspring.Acc, random = list(~ 1 | Mother.ID, ~ 1 | Father.ID), weights = varIdent(~ Mass | Father.Acc * Offspring.Acc), data = CTM.NMS.Data)
+
+# Means and plots
+
+require("emmeans")
+
+Mat_mmeans <- as.data.frame(emmeans(CTM.model.m1, ~Offspring.Acc, data = CTM.NMS.Data, nesting = NULL, nesting.order = FALSE, CIs = TRUE, plot = FALSE))
+
+Mat_expand <- expand.grid("Mother.Acc" = c(1, 2), "Offspring.Acc" = c(1, 2))
+
+Mat_mmeans <- Mat_expand %>%
+  mutate(
+    "yvar" = ifelse(Offspring.Acc == 1, Mat_mmeans$emmean[1], Mat_mmeans$emmean[2]),
+    "SE" = ifelse(Offspring.Acc == 1, Mat_mmeans$SE[1], Mat_mmeans$SE[2])
+  )
+
+Pat_mmeans <- as.data.frame(emmeans(CTM.model.m1, ~Offspring.Acc, data = CTM.NMS.Data, nesting = NULL, nesting.order = FALSE, CIs = TRUE, plot = FALSE))
+
+Pat_expand <- expand.grid("Father.Acc" = c(1, 2), "Offspring.Acc" = c(1, 2))
+
+Pat_mmeans <- Pat_expand %>%
+  mutate(
+    "yvar" = ifelse(Offspring.Acc == 1, Pat_mmeans$emmean[1], Pat_mmeans$emmean[2]),
+    "SE" = ifelse(Offspring.Acc == 1, Pat_mmeans$SE[1], Pat_mmeans$SE[2])
+  )
+
+Mat_dw <- ggplot(Mat_mmeans, aes(x = Mother.Acc, y = yvar, fill = factor(Offspring.Acc))) +
+  geom_jitter(
+    geom = "point", data = CTM.NMS.Data, mapping = aes(x = Mother.Acc, y = CTM), size = 1,
+    pch = 21, alpha = 0.3, position = position_dodge(width = 0.5)
+  ) +
+  geom_errorbar(
+    mapping = aes(x = Mother.Acc, ymin = yvar - SE * 1.96, ymax = yvar + SE * 1.96),
+    size = 1, width = 0.2, colour = "black", position = position_dodge(width = 0.5)
+  ) +
+  geom_point(size = 4, colour = "black", pch = 21, position = position_dodge(width = 0.5)) +
+  scale_x_discrete(labels = c("Cold Mothers", "Warm Mothers")) +
+  ylab("Critical Thermal Maximum (°C)") +
+  scale_fill_manual(
+    values = c("dodgerblue3", "magenta"),
+    name = "",
+    labels = c(" Cold Offspring", "Warm Offspring")
+  ) +
+  my.theme +
+  theme_bw() +
+  theme(axis.title.x = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+ggsave("/home/joshk/Documents/Trout/Brook_Trout_Revised_Figures/CTM_mmeans_mothers.jpg", Mat_dw,
+  width = 6, height = 6, dpi = 800
+)
+ggsave("/home/joshk/Documents/Trout/Brook_Trout_Revised_Figures/CTM_mmeans_mothers.pdf", Mat_dw,
+  width = 6, height = 6, dpi = 800
+)
+
+Pat_dw <- ggplot(Pat_mmeans, aes(x = Father.Acc, y = yvar, fill = factor(Offspring.Acc))) +
+  geom_jitter(
+    geom = "point", data = CTM.NMS.Data, mapping = aes(x = Father.Acc, y = CTM), size = 1,
+    pch = 21, alpha = 0.3, position = position_dodge(width = 0.5)
+  ) +
+  geom_errorbar(
+    mapping = aes(x = Father.Acc, ymin = yvar - SE * 1.96, ymax = yvar + SE * 1.96),
+    size = 1, width = 0.2, colour = "black", position = position_dodge(width = 0.5)
+  ) +
+  geom_point(size = 4, colour = "black", pch = 21, position = position_dodge(width = 0.5)) +
+  scale_x_discrete(labels = c("Cold Fathers", "Warm Fathers")) +
+  ylab("Critical Thermal Maximum (°C)") +
+  scale_fill_manual(
+    values = c("dodgerblue3", "magenta"),
+    name = "",
+    labels = c("Cold Offspring", "Warm Offspring")
+  ) +
+  my.theme +
+  theme_bw() +
+  theme(axis.title.x = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+ggsave("/home/joshk/Documents/Trout/Brook_Trout_Revised_Figures/CTM_mmeans_fathers.jpg", Pat_dw,
+  width = 6, height = 6, dpi = 800
+)
+ggsave("/home/joshk/Documents/Trout/Brook_Trout_Revised_Figures/CTM_mmeans_fathers.pdf", Pat_dw,
+  width = 6, height = 6, dpi = 800
+)
+
+# Residual plots
+
+CTM_Resid <- lme(CTM ~ Mass, random = list(~ 1 | Mother.ID, ~ 1 | Father.ID), weights = varIdent(~ Mass | Father.Acc * Offspring.Acc), data = CTM.NMS.Data)
+
+CTM.NMS.Data$Resid_CTM <- residuals(CTM_Resid, type = "response")
+
+Mat_resid_CTM <- ggplot(CTM.NMS.Data, aes(x = Mother.Acc, y = Resid_CTM, fill = Offspring.Acc)) +
+  geom_point(size = 1, pch = 21, alpha = 0.3, position = position_dodge(width = 0.5)) +
+  stat_summary(
+    geom = "errorbar", fun.data = "mean_cl_boot", size = 1,
+    width = 0.2, colour = "black", position = position_dodge(width = 0.5)
+  ) +
+  stat_summary(
+    geom = "point", fun = "mean", size = 4, colour = "black",
+    pch = 21, position = position_dodge(width = 0.5)
+  ) +
+  scale_x_discrete(labels = c("Cold Mothers", "Warm Mothers")) +
+  ylab("Critical Thermal Maximum (Residual °C)") +
+  scale_fill_manual(
+    values = c("dodgerblue3", "magenta"),
+    name = "",
+    labels = c("Cold Offspring", "Warm Offspring")
+  ) +
+  my.theme +
+  theme_bw() +
+  theme(axis.title.x = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+ggsave("/home/joshk/Documents/Trout/Brook_Trout_Revised_Figures/CTM_residuals_mothers.jpg", Mat_resid_CTM,
+  width = 6, height = 6, dpi = 800
+)
+ggsave("/home/joshk/Documents/Trout/Brook_Trout_Revised_Figures/CTM_residuals_mothers.pdf", Mat_resid_CTM,
+  width = 6, height = 6, dpi = 800
+)
+
+Pat_resid_CTM <- ggplot(CTM.NMS.Data, aes(x = Father.Acc, y = Resid_CTM, fill = Offspring.Acc)) +
+  geom_point(size = 1, pch = 21, alpha = 0.3, position = position_dodge(width = 0.5)) +
+  stat_summary(
+    geom = "errorbar", fun.data = "mean_cl_boot", size = 1,
+    width = 0.2, colour = "black", position = position_dodge(width = 0.5)
+  ) +
+  stat_summary(
+    geom = "point", fun = "mean", size = 4, colour = "black",
+    pch = 21, position = position_dodge(width = 0.5)
+  ) +
+  scale_x_discrete(labels = c("Cold Fathers", "Warm Fathers")) +
+  ylab("Critical Thermal Maximum (Residual °C)") +
+  scale_fill_manual(
+    values = c("dodgerblue3", "magenta"),
+    name = "",
+    labels = c("Cold Offspring", "Warm Offspring")
+  ) +
+  my.theme +
+  theme_bw() +
+  theme(axis.title.x = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+ggsave("/home/joshk/Documents/Trout/Brook_Trout_Revised_Figures/CTM_residuals_fathers.jpg", Pat_resid_CTM,
+  width = 6, height = 6, dpi = 800
+)
+ggsave("/home/joshk/Documents/Trout/Brook_Trout_Revised_Figures/CTM_residuals_fathers.pdf", Pat_resid_CTM,
+  width = 6, height = 6, dpi = 800
+)
+
+## Resting MO2
+
+# Top model
+
+RMR.m1 <- lmer(log(RMR) ~ log(Mass) + Mother.Acc + (1 | Mother.ID) + (1 | Father.ID), REML = FALSE, data = RMR.NMS.Data)
+
+Mat_mmeans <- as.data.frame(emmeans(RMR.m1, ~Mother.Acc, data = RMR.NMS.Data, nesting = NULL, nesting.order = FALSE, CIs = TRUE, plot = FALSE))
+
+Mat_expand <- expand.grid("Mother.Acc" = c(1, 2), "Offspring.Acc" = c(1, 2))
+
+Mat_mmeans <- Mat_expand %>%
+  mutate(
+    "yvar" = ifelse(Mother.Acc == 1, exp(Mat_mmeans$emmean[1]),
+      exp(Mat_mmeans$emmean[2])
+    ),
+    "UCL" = ifelse(Mother.Acc == 1, exp(Mat_mmeans$emmean[1] + 1.96 * Mat_mmeans$SE[1]),
+      exp(Mat_mmeans$emmean[2] + 1.96 * Mat_mmeans$SE[2])
+    ),
+    "LCL" = ifelse(Mother.Acc == 1, exp(Mat_mmeans$emmean[1] - 1.96 * Mat_mmeans$SE[1]),
+      exp(Mat_mmeans$emmean[2] - 1.96 * Mat_mmeans$SE[2])
+    ),
+  )
+
+RMR_mmeans1 <- as.data.frame(emmeans(RMR.m1, ~Mass, cov.reduce = FALSE, data = RMR.NMS.Data, nesting = NULL, nesting.order = FALSE, CIs = TRUE, plot = FALSE))
+
+Pat_expand <- expand.grid("Father.Acc" = c(1, 2), "Offspring.Acc" = c(1, 2))
+
+Pat_mmean <- Pat_expand %>%
+  mutate(
+    "yvar" = exp(RMR_mmeans1$emmean),
+    "UCL" = exp(RMR_mmeans1$emmean + 1.96 * RMR_mmeans1$SE),
+    "LCL" = exp(RMR_mmeans1$emmean - 1.96 * RMR_mmeans1$SE)
+  )
+
+RMR_father_plot <- ggplot(Pat_mmean, aes(x = Father.Acc, y = yvar, fill = factor(Offspring.Acc))) +
+  geom_jitter(
+    geom = "point", data = RMR.NMS.Data, mapping = aes(x = Father.Acc, y = RMR),
+    size = 1, pch = 21, alpha = 0.3, position = position_dodge(width = 0.5)
+  ) +
+  geom_errorbar(
+    mapping = aes(x = Father.Acc, ymin = LCL, ymax = UCL),
+    size = 1, width = 0.2, colour = "black", position = position_dodge(width = 0.5)
+  ) +
+  geom_point(size = 4, colour = "black", pch = 21, position = position_dodge(width = 0.5)) +
+  scale_x_discrete(labels = c("Cold Fathers", "Warm Fathers")) +
+  ylab(expression(Routine ~ MO[2] ~ (mg ~ O[2] ~ h^{
+    "-1"
+  }))) +
+  scale_fill_manual(
+    values = c("dodgerblue3", "magenta"),
+    name = "",
+    labels = c("Cold Offspring", "Warm Offspring")
+  ) +
+  my.theme +
+  theme_bw() +
+  theme(axis.title.x = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+ggsave("/home/joshk/Documents/Trout/Brook_Trout_Revised_Figures/RMR1_mmeans_by_fathers.jpg", RMR_father_plot, width = 6, height = 6, dpi = 800)
+ggsave("/home/joshk/Documents/Trout/Brook_Trout_Revised_Figures/RMR1_mmeans_by_fathers.pdf", RMR_father_plot, width = 6, height = 6, dpi = 800)
+
+RMR_mother_plot <- ggplot(Mat_mmeans, aes(x = Mother.Acc, y = yvar, fill = factor(Offspring.Acc))) +
+  geom_jitter(
+    geom = "point", data = RMR.NMS.Data, mapping = aes(x = Mother.Acc, y = RMR),
+    size = 1, pch = 21, alpha = 0.3, position = position_dodge(width = 0.5)
+  ) +
+  geom_errorbar(
+    mapping = aes(x = Mother.Acc, ymin = LCL, ymax = UCL),
+    size = 1, width = 0.2, colour = "black", position = position_dodge(width = 0.5)
+  ) +
+  geom_point(size = 4, colour = "black", pch = 21, position = position_dodge(width = 0.5)) +
+  scale_x_discrete(labels = c("Cold Mothers", "Warm Mothers")) +
+  ylab(expression(Routine ~ MO[2] ~ (mg ~ O[2] ~ h^{
+    "-1"
+  }))) +
+  scale_fill_manual(
+    values = c("dodgerblue3", "magenta"),
+    name = "",
+    labels = c("Cold Offspring", "Warm Offspring")
+  ) +
+  my.theme +
+  theme_bw() +
+  theme(axis.title.x = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+ggsave("/home/joshk/Documents/Trout/Brook_Trout_Revised_Figures/RMR1_mmeans_by_mothers.jpg", RMR_mother_plot, width = 6, height = 6, dpi = 800)
+ggsave("/home/joshk/Documents/Trout/Brook_Trout_Revised_Figures/RMR1_mmeans_by_mothers.pdf", RMR_mother_plot, width = 6, height = 6, dpi = 800)
+
+# Residual plots
+
+RMR_Resid <- lmer(log(RMR) ~ log(Mass) + Mother.Acc + (1 | Mother.ID) + (1 | Father.ID), REML = FALSE, data = RMR.NMS.Data)
+RMR.NMS.Data$Resid_RMR <- residuals(RMR_Resid, type = "response")
+
+Mat_resid_RMR <- ggplot(RMR.NMS.Data, aes(x = Mother.Acc, y = Resid_RMR, fill = Offspring.Acc)) +
+  geom_point(size = 1, pch = 21, alpha = 0.3, position = position_dodge(width = 0.5)) +
+  stat_summary(
+    geom = "errorbar", fun.data = "mean_cl_boot", size = 1,
+    width = 0.2, colour = "black", position = position_dodge(width = 0.5)
+  ) +
+  stat_summary(
+    geom = "point", fun = "mean", size = 4, colour = "black",
+    pch = 21, position = position_dodge(width = 0.5)
+  ) +
+  scale_x_discrete(labels = c("Cold Mothers", "Warm Mothers")) +
+  ylab(expression(~Residual ~ Routine ~ MO[2] ~ (Log ~ mg ~ O[2] ~ h^{
+    "-1"
+  }))) +
+  scale_fill_manual(
+    values = c("dodgerblue3", "magenta"),
+    name = "",
+    labels = c("Cold Offspring", "Warm Offspring")
+  ) +
+  geom_hline(yintercept = 0, colour = "black", size = 0.5) +
+  my.theme +
+  theme_bw() +
+  theme(axis.title.x = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+ggsave("/home/joshk/Documents/Trout/Brook_Trout_Revised_Figures/RMR_residuals_mothers_log.jpg", Mat_resid_RMR, width = 6, height = 6, dpi = 800)
+ggsave("/home/joshk/Documents/Trout/Brook_Trout_Revised_Figures/RMR_residuals_mothers_log.pdf", Mat_resid_RMR, width = 6, height = 6, dpi = 800)
+
+Pat_resid_RMR <- ggplot(RMR.NMS.Data, aes(x = Father.Acc, y = Resid_RMR, fill = Offspring.Acc)) +
+  geom_point(size = 1, pch = 21, alpha = 0.3, position = position_dodge(width = 0.5)) +
+  stat_summary(
+    geom = "errorbar", fun.data = "mean_cl_boot", size = 1,
+    width = 0.2, colour = "black", position = position_dodge(width = 0.5)
+  ) +
+  stat_summary(
+    geom = "point", fun = "mean", size = 4, colour = "black",
+    pch = 21, position = position_dodge(width = 0.5)
+  ) +
+  scale_x_discrete(labels = c("Cold Fathers", "Warm Fathers")) +
+  ylab(expression(~Residual ~ Routine ~ MO[2] ~ (Log ~ mg ~ O[2] ~ h^{
+    "-1"
+  }))) +
+  scale_fill_manual(
+    values = c("dodgerblue3", "magenta"),
+    name = "",
+    labels = c("Cold Offspring", "Warm Offspring")
+  ) +
+  geom_hline(yintercept = 0, colour = "black", size = 0.5) +
+  my.theme +
+  theme_bw() +
+  theme(axis.title.x = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+ggsave("/home/joshk/Documents/Trout/Brook_Trout_Revised_Figures/RMR_residuals_fathers_log.jpg", Pat_resid_RMR, width = 6, height = 6, dpi = 800)
+ggsave("/home/joshk/Documents/Trout/Brook_Trout_Revised_Figures/RMR_residuals_fathers_log.pdf", Pat_resid_RMR, width = 6, height = 6, dpi = 800)
+
+# Peak MO2
+
+MMR.m1 <- lmer(log(MMR) ~ log(Mass) + Offspring.Acc + (1 | Mother.ID) + (1 | Father.ID), REML = FALSE, data = MMR.NMS.Data)
+
+# Means and plots
+# Plotting marginal means
+
+Mat_mmeans <- as.data.frame(emmeans(MMR.m1, ~Offspring.Acc, data = MMR.NMS.Data, nesting = NULL, nesting.order = FALSE, CIs = TRUE, plot = FALSE))
+
+Mat_expand <- expand.grid("Mother.Acc" = c(1, 2), "Offspring.Acc" = c(1, 2))
+
+Mat_mmeans <- Mat_expand %>%
+  mutate(
+    "yvar" = ifelse(Offspring.Acc == 1, exp(Mat_mmeans$emmean[1]),
+      exp(Mat_mmeans$emmean[2])
+    ),
+    "UCL" = ifelse(Offspring.Acc == 1, exp(Mat_mmeans$emmean[1] + 1.96 * Mat_mmeans$SE[1]),
+      exp(Mat_mmeans$emmean[2] + 1.96 * Mat_mmeans$SE[2])
+    ),
+    "LCL" = ifelse(Offspring.Acc == 1, exp(Mat_mmeans$emmean[1] - 1.96 * Mat_mmeans$SE[1]),
+      exp(Mat_mmeans$emmean[2] - 1.96 * Mat_mmeans$SE[2])
+    )
+  )
+
+Pat_mmeans <- as.data.frame(emmeans(MMR.m1, ~Offspring.Acc, data = MMR.NMS.Data, nesting = NULL, nesting.order = FALSE, CIs = TRUE, plot = FALSE))
+
+Pat_expand <- expand.grid("Father.Acc" = c(1, 2), "Offspring.Acc" = c(1, 2))
+
+Pat_mmeans <- Pat_expand %>%
+  mutate(
+    "yvar" = ifelse(Offspring.Acc == 1, exp(Pat_mmeans$emmean[1]),
+      exp(Pat_mmeans$emmean[2])
+    ),
+    "UCL" = ifelse(Offspring.Acc == 1, exp(Pat_mmeans$emmean[1] + 1.96 * Pat_mmeans$SE[1]),
+      exp(Pat_mmeans$emmean[2] + 1.96 * Pat_mmeans$SE[2])
+    ),
+    "LCL" = ifelse(Offspring.Acc == 1, exp(Pat_mmeans$emmean[1] - 1.96 * Pat_mmeans$SE[1]),
+      exp(Pat_mmeans$emmean[2] - 1.96 * Pat_mmeans$SE[2])
+    )
+  )
+
+Mat_MMR <- ggplot(Mat_mmeans, aes(x = Mother.Acc, y = yvar, fill = factor(Offspring.Acc))) +
+  geom_jitter(
+    geom = "point", data = MMR.NMS.Data, mapping = aes(x = Mother.Acc, y = MMR), size = 1,
+    pch = 21, alpha = 0.3, position = position_dodge(width = 0.5)
+  ) +
+  geom_errorbar(
+    mapping = aes(x = Mother.Acc, ymin = LCL, ymax = UCL),
+    size = 1, width = 0.2, colour = "black", position = position_dodge(width = 0.5)
+  ) +
+  geom_point(size = 4, colour = "black", pch = 21, position = position_dodge(width = 0.5)) +
+  scale_x_discrete(labels = c("Cold Mothers", "Warm Mothers")) +
+  ylab(expression(Peak ~ MO[2] ~ (mg ~ O[2] ~ h^{
+    "-1"
+  }))) +
+  scale_fill_manual(
+    values = c("dodgerblue3", "magenta"),
+    name = "",
+    labels = c(" Cold Offspring", "Warm Offspring")
+  ) +
+  my.theme +
+  theme_bw() +
+  theme(
+    axis.title.x = element_blank(), panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+
+ggsave("/home/joshk/Documents/Trout/Brook_Trout_Revised_Figures/MMR_mmeans_mothers.jpg", Mat_MMR,
+  width = 6, height = 6, dpi = 800
+)
+ggsave("/home/joshk/Documents/Trout/Brook_Trout_Revised_Figures/MMR_mmeans_mothers.pdf", Mat_MMR,
+  width = 6, height = 6, dpi = 800
+)
+
+Pat_MMR <- ggplot(Pat_mmeans, aes(x = Father.Acc, y = yvar, fill = factor(Offspring.Acc))) +
+  geom_jitter(
+    geom = "point", data = MMR.NMS.Data, mapping = aes(x = Father.Acc, y = MMR), size = 1,
+    pch = 21, alpha = 0.3, position = position_dodge(width = 0.5)
+  ) +
+  geom_errorbar(
+    mapping = aes(x = Father.Acc, ymin = LCL, ymax = UCL),
+    size = 1, width = 0.2, colour = "black", position = position_dodge(width = 0.5)
+  ) +
+  geom_point(size = 4, colour = "black", pch = 21, position = position_dodge(width = 0.5)) +
+  scale_x_discrete(labels = c("Cold Fathers", "Warm Fathers")) +
+  ylab(expression(Peak ~ MO[2] ~ (mg ~ O[2] ~ h^{
+    "-1"
+  }))) +
+  scale_fill_manual(
+    values = c("dodgerblue3", "magenta"),
+    name = "",
+    labels = c("Cold Offspring", "Warm Offspring")
+  ) +
+  my.theme +
+  theme_bw() +
+  theme(axis.title.x = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+ggsave("/home/joshk/Documents/Trout/Brook_Trout_Revised_Figures/MMR_mmeans_fathers.jpg", Pat_MMR,
+  width = 6, height = 6, dpi = 800
+)
+ggsave("/home/joshk/Documents/Trout/Brook_Trout_Revised_Figures/MMR_mmeans_fathers.pdf", Pat_MMR,
+  width = 6, height = 6, dpi = 800
+)
+
+# Residual plots
+
+MMR_Resid <- lmer(log(MMR) ~ log(Mass) + Offspring.Acc + (1 | Mother.ID) + (1 | Father.ID), REML = FALSE, data = MMR.NMS.Data)
+MMR.NMS.Data$Resid_MMR <- residuals(MMR_Resid, type = "response")
+
+Mat_resid_MMR <- ggplot(MMR.NMS.Data, aes(x = Mother.Acc, y = Resid_MMR, fill = Offspring.Acc)) +
+  geom_point(size = 1, pch = 21, alpha = 0.3, position = position_dodge(width = 0.5)) +
+  stat_summary(
+    geom = "errorbar", fun.data = "mean_cl_boot", size = 1,
+    width = 0.2, colour = "black", position = position_dodge(width = 0.5)
+  ) +
+  stat_summary(
+    geom = "point", fun = "mean", size = 4, colour = "black",
+    pch = 21, position = position_dodge(width = 0.5)
+  ) +
+  scale_x_discrete(labels = c("Cold Mothers", "Warm Mothers")) +
+  ylab(expression(Peak ~ MO[2] ~ (Log ~ Residual ~ mg ~ O[2] ~ h^{
+    "-1"
+  }))) +
+  scale_fill_manual(
+    values = c("dodgerblue3", "magenta"),
+    name = "",
+    labels = c("Cold Offspring", "Warm Offspring")
+  ) +
+  geom_hline(yintercept = 0, colour = "black", size = 0.5) +
+  my.theme +
+  theme_bw() +
+  theme(axis.title.x = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+ggsave("/home/joshk/Documents/Trout/Brook_Trout_Revised_Figures/MMR_residuals_mothers_Log.jpg", Mat_resid_MMR, width = 6, height = 6, dpi = 800)
+ggsave("/home/joshk/Documents/Trout/Brook_Trout_Revised_Figures/MMR_residuals_mothers_Log.pdf", Mat_resid_MMR,
+  width = 6, height = 6, dpi = 800
+)
+
+Pat_resid_MMR <- ggplot(MMR.NMS.Data, aes(x = Father.Acc, y = Resid_MMR, fill = Offspring.Acc)) +
+  geom_point(size = 1, pch = 21, alpha = 0.3, position = position_dodge(width = 0.5)) +
+  stat_summary(
+    geom = "errorbar", fun.data = "mean_cl_boot", size = 1,
+    width = 0.2, colour = "black", position = position_dodge(width = 0.5)
+  ) +
+  stat_summary(
+    geom = "point", fun = "mean", size = 4, colour = "black",
+    pch = 21, position = position_dodge(width = 0.5)
+  ) +
+  scale_x_discrete(labels = c("Cold Fathers", "Warm Fathers")) +
+  ylab(expression(Peak ~ MO[2] ~ (Log ~ Residual ~ mg ~ O[2] ~ h^{
+    "-1"
+  }))) +
+  scale_fill_manual(
+    values = c("dodgerblue3", "magenta"),
+    name = "",
+    labels = c("Cold Offspring", "Warm Offspring")
+  ) +
+  geom_hline(yintercept = 0, colour = "black", size = 0.5) +
+  my.theme +
+  theme_bw() +
+  theme(axis.title.x = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+ggsave("/home/joshk/Documents/Trout/Brook_Trout_Revised_Figures/MMR_residuals_fathers.jpg", Pat_resid_MMR, width = 6, height = 6, dpi = 800)
+ggsave("/home/joshk/Documents/Trout/Brook_Trout_Revised_Figures/MMR_residuals_fathers.pdf", Pat_resid_MMR, width = 6, height = 6, dpi = 800)
+
+```

@@ -1,0 +1,1993 @@
+---
+title: "The Transgenerational Effect of Environmental Warming on the Upper Thermal Tolerance
+of Brook Trout (*S. fontinalis*): Model Selection"
+author: "Chantelle M. Penney, Joshua K.R. Tabh, Chris C. Wilson, Gary Burness"
+date: "March 22, 2021"
+output: html_document
+---
+
+```{r warning = FALSE, message = FALSE}
+
+# Directory and Data Import
+
+setwd("/home/joshk/git_repositories/BrookTrout_TG/Data")
+BTChallenge <- read.csv("BT Challenge_DegreeDay.csv")
+
+{
+  BTChallenge$Offspring.Acc <- as.factor(BTChallenge$Offspring.Acc)
+  BTChallenge$Mother.Acc <- as.factor(BTChallenge$Mother.Acc)
+  BTChallenge$Father.Acc <- as.factor(BTChallenge$Father.Acc)
+  BTChallenge$Mother.ID <- as.factor(BTChallenge$Mother.ID)
+  BTChallenge$Father.ID <- as.factor(BTChallenge$Father.ID)
+  BTChallenge$Subject.ID <- as.factor(BTChallenge$Subject.ID)
+  BTChallenge$Family <- as.factor(BTChallenge$Family)
+  BTChallenge$Parent.Group <- as.factor(BTChallenge$Parent.Group)
+}
+
+options(na.action = na.omit)
+
+## Loading in necessary packages
+
+library("easypackages")
+
+libraries(
+  "broom", "car", "dotwhisker", "dplyr", "ggplot2", "grid",
+  "gridExtra", "gtable", "itsadug", "knitr", "lme4", "lmerTest",
+  "mgcv", "MuMIn", "nlme", "purrr", "rmarkdown", "splines"
+)
+
+# Adding font
+
+library("showtext")
+font_add_google(name = "Noto Sans", family = "Noto Sans")
+
+## Additional functions
+
+strip.lme <- function(model.name) {
+  coef.names <- c(names(model.name$coefficients$fixed))
+  tTab.data <- data.frame(summary(model.name)$tTable[, c(1, 2, 4)], row.names = NULL)
+  tTab.data <- cbind(coef.names, tTab.data)
+  return(tTab.data)
+}
+
+sig.lme <- function(model.name, sig.level = 0.1) {
+  sig.data <- as.data.frame(summary(model.name)$tTable[c(which(as.numeric(paste(summary(model.name)$tTable[, 5])) <= sig.level)), ])
+  return(sig.data)
+}
+
+```
+### Assigning ggplot2 themes for figures
+
+```{r warning = FALSE, message = FALSE}
+
+my.theme <- theme(
+  panel.grid.minor = element_blank(),
+  axis.title = element_text(size = 14, family = "Noto Sans"),
+  axis.text = element_text(size = 14, colour = "black", family = "Noto Sans"),
+  axis.title.y = element_text(vjust = 0.5), panel.grid.major =
+    element_line(colour = "grey75"), legend.title = element_text(
+    size = 14,
+    colour = "black", family = "Noto Sans"
+  ), legend.text = element_text(
+    size = 12,
+    colour = "black", family = "Noto Sans"
+  )
+)
+
+my.theme.dw <- theme(
+  panel.grid.minor = element_blank(), panel.grid.major = element_blank(),
+  axis.title = element_text(size = 12, family = "Noto Sans"),
+  axis.text = element_text(size = 12, colour = "black", family = "Noto Sans"),
+  legend.title = element_text(
+    size = 12,
+    colour = "black", family = "Noto Sans"
+  ), legend.text = element_text(
+    size = 12,
+    colour = "black", family = "Noto Sans"
+  )
+)
+
+my.theme.diag <- theme(
+  panel.grid.minor = element_blank(),
+  axis.title = element_text(size = 8, family = "Noto Sans"),
+  axis.text = element_text(size = 8, colour = "black", family = "Noto Sans"),
+  axis.title.y = element_text(angle = 0, vjust = 0.5), panel.grid.major =
+    element_line(colour = "grey75"), legend.title = element_text(
+    size = 8,
+    colour = "black", family = "Noto Sans"
+  ), legend.text = element_text(
+    size = 8,
+    colour = "black", family = "Noto Sans"
+  )
+)
+
+```
+### Assessing parameter distributions by plots
+
+```{r warning = FALSE, message = FALSE}
+
+Unique.Mass <- distinct(BTChallenge, Mass, .keep_all = TRUE) %>%
+  select(Subject.ID, Mass, Offspring.Acc, Mother.Acc, Father.Acc, Family)
+
+ggplot(data = Unique.Mass, aes(x = Mass)) +
+  geom_histogram(colour = "black", fill = "dodgerblue2", bins = 20) +
+  theme_bw() +
+  my.theme.diag +
+  geom_vline(
+    xintercept = with(na.omit(Unique.Mass), mean(Mass)), size = 1.25,
+    colour = "black", linetype = "dotted"
+  ) +
+  xlab("Mass (g)") +
+  geom_density(alpha = 0.5, aes(y = 1 / 5 * ..count..), fill = "dodgerblue2")
+
+ggplot(data = Unique.Mass, aes(
+  x = Mass, fill = as.factor(Offspring.Acc),
+  colour = as.factor(Offspring.Acc)
+)) +
+  geom_histogram(bins = 20) +
+  theme_bw() +
+  my.theme.diag +
+  geom_vline(
+    xintercept = with(na.omit(Unique.Mass), mean(Mass)), size = 1.25,
+    colour = "black", linetype = "dotted"
+  ) +
+  xlab("Mass (g)") +
+  geom_density(alpha = 0.5, aes(y = 1 / 4.2 * ..count..)) +
+  scale_fill_manual(
+    values =
+      c("dodgerblue3", "maroon1")
+  ) +
+  scale_colour_manual(
+    values =
+      c("black", "black"), guide = FALSE
+  ) +
+  guides(fill = guide_legend(
+    title =
+      "Offspring Acclimation \n Temperature"
+  ))
+
+## Strong overlap
+
+ggplot(data = Unique.Mass, aes(
+  x = Mass, fill = as.factor(Mother.Acc),
+  colour = as.factor(Mother.Acc)
+)) +
+  geom_histogram(bins = 20) +
+  theme_bw() +
+  my.theme.diag +
+  geom_vline(
+    xintercept = with(na.omit(Unique.Mass), mean(Mass)), size = 1.25,
+    colour = "black", linetype = "dotted"
+  ) +
+  xlab("Mass (g)") +
+  geom_density(alpha = 0.5, aes(y = 2 / 7 * ..count..)) +
+  scale_fill_manual(
+    values =
+      c("slateblue", "lightpink")
+  ) +
+  scale_colour_manual(
+    values =
+      c("black", "black"), guide = FALSE
+  ) +
+  guides(fill = guide_legend(
+    title =
+      "Maternal Acclimation \n Temperature"
+  ))
+
+ggplot(data = Unique.Mass, aes(
+  x = Mass, fill = as.factor(Father.Acc),
+  colour = as.factor(Father.Acc)
+)) +
+  geom_histogram(bins = 20) +
+  theme_bw() +
+  my.theme.diag +
+  geom_vline(
+    xintercept = with(na.omit(Unique.Mass), mean(Mass)), size = 1.25,
+    colour = "black", linetype = "dotted"
+  ) +
+  xlab("Mass (g)") +
+  geom_density(alpha = 0.5, aes(y = 2 / 7 * ..count..)) +
+  scale_fill_manual(
+    values =
+      c("seagreen3", "magenta3")
+  ) +
+  scale_colour_manual(
+    values =
+      c("black", "black"), guide = FALSE
+  ) +
+  guides(fill = guide_legend(
+    title =
+      "Paternal Acclimation \n Temperature"
+  ))
+
+## No obvious distinction between offspring from warm and cold mothers, or fathers.
+
+```
+### Exploring metabolic responses to thermal challenge across groupings. Error bars represent +/- 95% CI.
+
+```{r warning = FALSE, message = FALSE}
+Challenge.Sum <- BTChallenge %>%
+  group_by(Challenge.Temp) %>%
+  summarize(
+    Mean = mean(MO2.NMS, na.rm = TRUE), Upper.CI = mean(MO2.NMS,
+      na.rm = TRUE
+    ) + 1.96 * (sd(MO2.NMS, na.rm = TRUE) / sqrt(length(na.omit(MO2.NMS)))),
+    Lower.CI = mean(MO2.NMS, na.rm = TRUE) - 1.96 * (sd(MO2.NMS, na.rm = TRUE) /
+      sqrt(length(na.omit(MO2.NMS))))
+  )
+
+## All offspring grouped.
+
+ggplot(Challenge.Sum, aes(x = Challenge.Temp, y = Mean)) +
+  theme_bw() +
+  my.theme +
+  geom_errorbar(
+    mapping = aes(
+      x = Challenge.Temp,
+      ymin = c(Lower.CI), ymax = c(Upper.CI)
+    ), width = 0.2, size = 1,
+    color = "dodgerblue3"
+  ) +
+  geom_point(size = 1, colour = "maroon1") +
+  xlab("Challenge Temperature \n (°C)") +
+  ylab("Metabolic Rate (mg O2/h)")
+
+# Robust elevation at 25 °C.
+
+Challenge.Sum.Off <- BTChallenge %>%
+  group_by(Challenge.Temp, Offspring.Acc) %>%
+  summarize(
+    Mean = mean(MO2.NMS, na.rm = TRUE), Upper.CI = mean(MO2.NMS,
+      na.rm = TRUE
+    ) + 1.96 * (sd(MO2.NMS, na.rm = TRUE) / sqrt(length(na.omit(MO2.NMS)))),
+    Lower.CI = mean(MO2.NMS, na.rm = TRUE) - 1.96 * (sd(MO2.NMS, na.rm = TRUE) /
+      sqrt(length(na.omit(MO2.NMS))))
+  )
+
+## Split by offspring acclimation temperature.
+
+ggplot(as.data.frame(Challenge.Sum.Off), aes(
+  x = Challenge.Temp,
+  y = Mean, group = Offspring.Acc, colour = Offspring.Acc
+)) +
+  theme_bw() +
+  my.theme +
+  geom_errorbar(
+    mapping = aes(
+      x = Challenge.Temp,
+      ymin = c(Lower.CI), ymax = c(Upper.CI)
+    ), width = 0.2, size = 1,
+    position = position_dodge(width = 0.5)
+  ) +
+  geom_point(size = 1, colour = "black", position = position_dodge(width = 0.5)) +
+  xlab("Challenge Temperature \n (°C)") +
+  ylab("Metabolic Rate (mg O2/h)") +
+  theme(legend.position = "top") +
+  scale_colour_manual(values = c("dodgerblue", "maroon1")) +
+  guides(colour = guide_legend(title = "Offspring Acclimation \n Temperature"))
+
+# Some divergence, but does not appear systematic.
+
+Challenge.Sum.Mat <- BTChallenge %>%
+  group_by(Challenge.Temp, Mother.Acc) %>%
+  summarize(
+    Mean = mean(MO2.NMS, na.rm = TRUE), Upper.CI = mean(MO2.NMS,
+      na.rm = TRUE
+    ) + 1.96 * (sd(MO2.NMS, na.rm = TRUE) / sqrt(length(na.omit(MO2.NMS)))),
+    Lower.CI = mean(MO2.NMS, na.rm = TRUE) - 1.96 * (sd(MO2.NMS, na.rm = TRUE) /
+      sqrt(length(na.omit(MO2.NMS))))
+  )
+
+# Split by maternal acclimation temperature
+
+ggplot(as.data.frame(Challenge.Sum.Mat), aes(
+  x = Challenge.Temp,
+  y = Mean, group = Mother.Acc, colour = Mother.Acc
+)) +
+  theme_bw() +
+  my.theme +
+  geom_errorbar(
+    mapping = aes(
+      x = Challenge.Temp,
+      ymin = c(Lower.CI), ymax = c(Upper.CI)
+    ), width = 0.2, size = 1,
+    position = position_dodge(width = 0.5)
+  ) +
+  geom_point(size = 1, colour = "black", position = position_dodge(width = 0.5)) +
+  xlab("Challenge Temperature \n (°C)") +
+  ylab("Metabolic Rate (mg O2/h)") +
+  theme(legend.position = "top") +
+  scale_colour_manual(values = c("slateblue", "lightpink")) +
+  guides(colour = guide_legend(title = "Maternal Acclimation \n Temperature"))
+
+# Perhaps a very subtle divergence.
+
+Challenge.Sum.Pat <- BTChallenge %>%
+  group_by(Challenge.Temp, Father.Acc) %>%
+  summarize(
+    Mean = mean(MO2.NMS, na.rm = TRUE), Upper.CI = mean(MO2.NMS,
+      na.rm = TRUE
+    ) + 1.96 * (sd(MO2.NMS, na.rm = TRUE) / sqrt(length(na.omit(MO2.NMS)))),
+    Lower.CI = mean(MO2.NMS, na.rm = TRUE) - 1.96 * (sd(MO2.NMS, na.rm = TRUE) /
+      sqrt(length(na.omit(MO2.NMS))))
+  )
+
+# Split by Paternal Acclimation Temperature.
+
+ggplot(as.data.frame(Challenge.Sum.Pat), aes(
+  x = Challenge.Temp,
+  y = Mean, group = Father.Acc, colour = Father.Acc
+)) +
+  theme_bw() +
+  my.theme +
+  geom_errorbar(
+    mapping = aes(
+      x = Challenge.Temp,
+      ymin = c(Lower.CI), ymax = c(Upper.CI)
+    ), width = 0.2, size = 1,
+    position = position_dodge(width = 0.5)
+  ) +
+  geom_point(size = 1, colour = "black", position = position_dodge(width = 0.5)) +
+  xlab("Challenge Temperature \n (°C)") +
+  ylab("Metabolic Rate (mg O2/h)") +
+  theme(legend.position = "top") +
+  scale_colour_manual(values = c("seagreen3", "magenta3")) +
+  guides(colour = guide_legend(title = "Paternal Acclimation \n Temperature"))
+
+# Subtle effect at upper temperatures.
+
+Challenge.Sum.OffMat <- BTChallenge %>%
+  group_by(Challenge.Temp, Offspring.Acc, Mother.Acc) %>%
+  summarize(
+    Mean = mean(MO2.NMS, na.rm = TRUE), Upper.CI = mean(MO2.NMS,
+      na.rm = TRUE
+    ) + 1.96 * (sd(MO2.NMS, na.rm = TRUE) / sqrt(length(na.omit(MO2.NMS)))),
+    Lower.CI = mean(MO2.NMS, na.rm = TRUE) - 1.96 * (sd(MO2.NMS, na.rm = TRUE) /
+      sqrt(length(na.omit(MO2.NMS))))
+  )
+
+OffMat.Group <- c()
+for (i in 1:nrow(Challenge.Sum.OffMat)) {
+  if (Challenge.Sum.OffMat$Offspring.Acc[i] == 1 & Challenge.Sum.OffMat$Mother.Acc[i] == 1) {
+    OffMat.Group[i] <- ("1")
+  } else if (
+    Challenge.Sum.OffMat$Offspring.Acc[i] == 1 & Challenge.Sum.OffMat$Mother.Acc[i] == 2) {
+    OffMat.Group[i] <- ("2")
+  } else if (
+    Challenge.Sum.OffMat$Offspring.Acc[i] == 2 & Challenge.Sum.OffMat$Mother.Acc[i] == 1) {
+    OffMat.Group[i] <- ("3")
+  } else if (
+    Challenge.Sum.OffMat$Offspring.Acc[i] == 2 & Challenge.Sum.OffMat$Mother.Acc[i] == 2) {
+    OffMat.Group[i] <- ("4")
+  }
+}
+
+Challenge.Sum.OffMat$OffMat <- OffMat.Group
+
+# Parsing by Maternal and Offspring Acclimation Temperature
+
+ggplot(as.data.frame(Challenge.Sum.OffMat), aes(
+  x = Challenge.Temp,
+  y = Mean, group = OffMat, shape = Mother.Acc, colour = Offspring.Acc
+)) +
+  theme_bw() +
+  my.theme +
+  geom_errorbar(
+    mapping = aes(
+      x = Challenge.Temp,
+      ymin = c(Lower.CI), ymax = c(Upper.CI)
+    ), width = 0.2, size = 1,
+    position = position_dodge(width = 0.5)
+  ) +
+  geom_point(size = 1.5, colour = "black", position = position_dodge(width = 0.5)) +
+  xlab("Challenge Temperature \n (°C)") +
+  ylab("Metabolic Rate (mg O2/h)") +
+  theme(legend.position = "top") +
+  scale_colour_manual(values = c("black", "gold2")) +
+  guides(colour = guide_legend(title = "Offspring Acclimation \n Temperature")) +
+  guides(shape = guide_legend(title = "Maternal Acclimation \n Temperature")) +
+  theme(legend.title = element_text(size = 10))
+
+Challenge.Sum.OffPat <- BTChallenge %>%
+  group_by(Challenge.Temp, Offspring.Acc, Father.Acc) %>%
+  summarize(
+    Mean = mean(MO2.NMS, na.rm = TRUE), Upper.CI = mean(MO2.NMS,
+      na.rm = TRUE
+    ) + 1.96 * (sd(MO2.NMS, na.rm = TRUE) / sqrt(length(na.omit(MO2.NMS)))),
+    Lower.CI = mean(MO2.NMS, na.rm = TRUE) - 1.96 * (sd(MO2.NMS, na.rm = TRUE) /
+      sqrt(length(na.omit(MO2.NMS))))
+  )
+
+OffPat.Group <- c()
+for (i in 1:nrow(Challenge.Sum.OffPat)) {
+  if (Challenge.Sum.OffPat$Offspring.Acc[i] == 1 & Challenge.Sum.OffPat$Father.Acc[i] == 1) {
+    OffPat.Group[i] <- ("1")
+  } else if (
+    Challenge.Sum.OffPat$Offspring.Acc[i] == 1 & Challenge.Sum.OffPat$Father.Acc[i] == 2) {
+    OffPat.Group[i] <- ("2")
+  } else if (
+    Challenge.Sum.OffPat$Offspring.Acc[i] == 2 & Challenge.Sum.OffPat$Father.Acc[i] == 1) {
+    OffPat.Group[i] <- ("3")
+  } else if (
+    Challenge.Sum.OffPat$Offspring.Acc[i] == 2 & Challenge.Sum.OffPat$Father.Acc[i] == 2) {
+    OffPat.Group[i] <- ("4")
+  }
+}
+
+# Now parsing by paternal and offspring acclimation temperatures
+
+Challenge.Sum.OffPat$OffPat <- OffPat.Group
+ggplot(as.data.frame(Challenge.Sum.OffPat), aes(
+  x = Challenge.Temp,
+  y = Mean, group = OffPat, shape = Father.Acc, colour = Offspring.Acc
+)) +
+  theme_bw() +
+  my.theme +
+  geom_errorbar(
+    mapping = aes(
+      x = Challenge.Temp,
+      ymin = c(Lower.CI), ymax = c(Upper.CI)
+    ), width = 0.2, size = 1,
+    position = position_dodge(width = 0.5)
+  ) +
+  geom_point(size = 1.5, colour = "black", position = position_dodge(width = 0.5)) +
+  xlab("Challenge Temperature \n (°C)") +
+  ylab("Metabolic Rate (mg O2/h)") +
+  theme(legend.position = "top") +
+  scale_colour_manual(values = c("dodgerblue3", "maroon1")) +
+  guides(colour = guide_legend(title = "Offspring Acclimation \n Temperature")) +
+  guides(shape = guide_legend(title = "Paternal Acclimation \n Temperature")) +
+  theme(legend.title = element_text(size = 10))
+
+# Possible, subtle interaction.
+
+```
+### Producing three-way "interaction" plots
+```{r warning = FALSE, message = FALSE}
+Challenge.Sum.All <- BTChallenge %>%
+  group_by(Challenge.Temp, Offspring.Acc, Father.Acc, Mother.Acc) %>%
+  summarize(
+    Mean = mean(MO2.NMS, na.rm = TRUE), Upper.CI = mean(MO2.NMS,
+      na.rm = TRUE
+    ) + 1.96 * (sd(MO2.NMS, na.rm = TRUE) / sqrt(length(na.omit(MO2.NMS)))),
+    Lower.CI = mean(MO2.NMS, na.rm = TRUE) - 1.96 * (sd(MO2.NMS, na.rm = TRUE) /
+      sqrt(length(na.omit(MO2.NMS))))
+  )
+
+OffPat.Group.All <- c()
+for (i in 1:nrow(Challenge.Sum.All)) {
+  if (Challenge.Sum.All$Offspring.Acc[i] == 1 &
+    Challenge.Sum.All$Father.Acc[i] == 1) {
+    OffPat.Group.All[i] <- ("1")
+  } else if (
+    Challenge.Sum.All$Offspring.Acc[i] == 1 &
+      Challenge.Sum.All$Father.Acc[i] == 2) {
+    OffPat.Group.All[i] <- ("2")
+  } else if (
+    Challenge.Sum.All$Offspring.Acc[i] == 2 &
+      Challenge.Sum.All$Father.Acc[i] == 1) {
+    OffPat.Group.All[i] <- ("3")
+  } else if (
+    Challenge.Sum.All$Offspring.Acc[i] == 2 &
+      Challenge.Sum.All$Father.Acc[i] == 2) {
+    OffPat.Group.All[i] <- ("4")
+  }
+}
+Challenge.Sum.All$OffPat <- OffPat.Group.All
+
+OffMat.Group.All <- c()
+for (i in 1:nrow(Challenge.Sum.All)) {
+  if (Challenge.Sum.All$Offspring.Acc[i] == 1 &
+    Challenge.Sum.All$Mother.Acc[i] == 1) {
+    OffMat.Group.All[i] <- ("1")
+  } else if (
+    Challenge.Sum.All$Offspring.Acc[i] == 1 &
+      Challenge.Sum.All$Mother.Acc[i] == 2) {
+    OffMat.Group.All[i] <- ("2")
+  } else if (
+    Challenge.Sum.All$Offspring.Acc[i] == 2 &
+      Challenge.Sum.All$Mother.Acc[i] == 1) {
+    OffMat.Group.All[i] <- ("3")
+  } else if (
+    Challenge.Sum.All$Offspring.Acc[i] == 2 &
+      Challenge.Sum.All$Mother.Acc[i] == 2) {
+    OffMat.Group.All[i] <- ("4")
+  }
+}
+Challenge.Sum.All$OffMat <- OffMat.Group.All
+
+MatPat.Group.All <- c()
+for (i in 1:nrow(Challenge.Sum.All)) {
+  if (Challenge.Sum.All$Mother.Acc[i] == 1 &
+    Challenge.Sum.All$Father.Acc[i] == 1) {
+    MatPat.Group.All[i] <- ("1")
+  } else if (
+    Challenge.Sum.All$Mother.Acc[i] == 1 &
+      Challenge.Sum.All$Father.Acc[i] == 2) {
+    MatPat.Group.All[i] <- ("2")
+  } else if (
+    Challenge.Sum.All$Mother.Acc[i] == 2 &
+      Challenge.Sum.All$Father.Acc[i] == 1) {
+    MatPat.Group.All[i] <- ("3")
+  } else if (
+    Challenge.Sum.All$Mother.Acc[i] == 2 &
+      Challenge.Sum.All$Father.Acc[i] == 2) {
+    MatPat.Group.All[i] <- ("4")
+  }
+}
+Challenge.Sum.All$MatPat <- MatPat.Group.All
+
+OffParError.DFacet <- ggplot(as.data.frame(Challenge.Sum.All), aes(
+  x = Challenge.Temp,
+  y = Mean, group = OffPat, shape = Father.Acc, colour = Offspring.Acc
+)) +
+  theme_bw() +
+  my.theme +
+  geom_errorbar(
+    mapping = aes(
+      x = Challenge.Temp,
+      ymin = c(Lower.CI), ymax = c(Upper.CI)
+    ), width = 0.2, size = 1,
+    position = position_dodge(width = 0.5)
+  ) +
+  geom_point(size = 1.5, colour = "black", position = position_dodge(width = 0.5)) +
+  xlab("Challenge Temperature \n (°C)") +
+  ylab("Metabolic Rate (mg O2/h)") +
+  theme(legend.position = "top") +
+  scale_colour_manual(values = c("dodgerblue3", "maroon1")) +
+  guides(colour = guide_legend(title = "Offspring Acclimation \n Temperature")) +
+  guides(shape = guide_legend(title = "Paternal Acclimation \n Temperature")) +
+  theme(legend.title = element_text(size = 10))
+
+## Facetting by maternal acclimation temperature first
+
+OffParError.DFacet + facet_grid(rows = vars(Mother.Acc))
+
+OffParError.SFacet <- ggplot(as.data.frame(Challenge.Sum.All), aes(
+  x = Challenge.Temp,
+  y = Mean, group = OffMat, shape = Mother.Acc, colour = Offspring.Acc
+)) +
+  theme_bw() +
+  my.theme +
+  geom_errorbar(
+    mapping = aes(
+      x = Challenge.Temp,
+      ymin = c(Lower.CI), ymax = c(Upper.CI)
+    ), width = 0.2, size = 1,
+    position = position_dodge(width = 0.5)
+  ) +
+  geom_point(size = 1.5, colour = "black", position = position_dodge(width = 0.5)) +
+  xlab("Challenge Temperature \n (°C)") +
+  ylab("Metabolic Rate (mg O2/h)") +
+  theme(legend.position = "top") +
+  scale_colour_manual(values = c("slateblue", "gold2")) +
+  guides(colour = guide_legend(title = "Offspring Acclimation \n Temperature")) +
+  guides(shape = guide_legend(title = "Maternal Acclimation \n Temperature")) +
+  theme(legend.title = element_text(size = 10))
+
+## Now facetting by paternal acclimation temperature
+
+OffParError.SFacet + facet_grid(rows = vars(Father.Acc))
+
+ParError.OFacet <- ggplot(as.data.frame(Challenge.Sum.All), aes(
+  x = Challenge.Temp,
+  y = Mean, group = MatPat, shape = Mother.Acc, colour = Father.Acc
+)) +
+  theme_bw() +
+  my.theme +
+  geom_errorbar(
+    mapping = aes(
+      x = Challenge.Temp,
+      ymin = c(Lower.CI), ymax = c(Upper.CI)
+    ), width = 0.2, size = 1,
+    position = position_dodge(width = 0.5)
+  ) +
+  geom_point(size = 1.5, colour = "black", position = position_dodge(width = 0.5)) +
+  xlab("Challenge Temperature \n (°C)") +
+  ylab("Metabolic Rate (mg O2/h)") +
+  theme(legend.position = "top") +
+  scale_colour_manual(values = c("mediumseagreen", "mediumorchid")) +
+  guides(colour = guide_legend(title = "Paternal Acclimation \n Temperature")) +
+  guides(shape = guide_legend(title = "Maternal Acclimation \n Temperature")) +
+  theme(legend.title = element_text(size = 10))
+
+## And lastly, facetting by offspring acclimation temperature
+
+ParError.OFacet + facet_grid(rows = vars(Offspring.Acc))
+
+```
+
+### Model construction
+
+```{r warning = FALSE, message = FALSE}
+
+## Building cubic regression spline with low edf (here, 4) due to low curvature. Fitting spline to global data.
+
+plot(MO2.NMS ~ Challenge.Temp, data = na.omit(BTChallenge))
+curve.model <- gam(MO2.NMS ~ s(Challenge.Temp, bs = "cs", k = 7), na.action = na.exclude, data = BTChallenge)
+
+## Results of gam
+summary(curve.model)
+plot(curve.model)
+
+# Appears nicely fitting.
+
+## Pulling out predicted values
+
+smoother <- predict(curve.model, type = "response")
+
+With.Fit <- BTChallenge
+With.Fit$MO2.NMS <- smoother
+With.Fit <- With.Fit %>%
+  mutate("Type" = "Fit")
+Resp.Alone <- BTChallenge
+Resp.Alone$Type <- "Response"
+Total.Data <- rbind(With.Fit, Resp.Alone)
+
+## Plotting the cubic regression spline
+
+Total.Data %>%
+  ggplot(aes(x = Challenge.Temp, y = MO2.NMS, fill = Type, linetype = Type)) +
+  geom_point(pch = 21) +
+  scale_fill_manual(values = c("black", "magenta")) +
+  geom_smooth(method = "gam", formula = y ~ s(x, bs = "cr", k = 7))
+
+## Again, appears fitting. Appending spline to dataframe
+
+BTChallenge$bSpline <- smoother
+
+# Constructing linear model
+## Crossed random intercepts per parental ID, with crossed Offspring ID.
+
+BTChallenge <- BTChallenge %>%
+  dplyr::rename("Degree.Day" = Degree.Dat)
+
+BTChallenge$Degree.Day <- factor(BTChallenge$Degree.Day)
+Dummy <- factor(1)
+Dat <- groupedData(MO2.NMS ~ 1 | Dummy, BTChallenge)
+
+Model1 <- lme(MO2.NMS ~ Mass + bSpline * Offspring.Acc * Father.Acc * Mother.Acc, random = pdBlocked(list(pdIdent(~ 0 + Father.ID), pdIdent(~ 0 + Mother.ID), pdIdent(~ 0 + Subject.ID), pdIdent(~ 0 + Degree.Day))), na.action = na.exclude, data = Dat)
+
+# Assuming large degrees of freedom by estimating Z values (using glmmTMB):
+
+require("glmmTMB")
+
+Model1TMB <- glmmTMB(MO2.NMS ~ Mass + bSpline * Offspring.Acc * Father.Acc * Mother.Acc + (1 | Father.ID) + (1 | Mother.ID) + (1 | Subject.ID) + (1 | Degree.Day), na.action = na.exclude, data = BTChallenge)
+
+# Diagnosing residuals
+
+{
+  M1.Res.Alone <- ggplot(
+    data = data.frame("Res" = residuals(Model1, type = "normalized")),
+    aes(x = 1:nrow(Dat), y = Res)
+  ) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "mediumseagreen", alpha = 0.5) +
+    xlab("Row Number") +
+    ylab("Deviance Residuals")
+
+  M1.Res.by.Fit <- ggplot(data = data.frame(
+    "Res" = residuals(Model1, type = "normalized"),
+    "Fit" = predict(Model1)
+  ), aes(x = Fit, y = Res)) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "cornflowerblue", alpha = 0.5) +
+    xlab("Fitted Values") +
+    ylab("Deviance Residuals")
+
+  M1.Res.by.Resp <- ggplot(data = data.frame(
+    "Res" = residuals(Model1, type = "normalized"),
+    "Resp" = Dat$MO2.NMS
+  ), aes(x = Resp, y = Res)) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "mediumorchid", alpha = 0.5) +
+    xlab("Metabolic Rate (mg O2/hour") +
+    ylab("Deviance Residuals")
+
+  M1.QQNorm.1 <- ggplot(
+    data.frame("Res" = residuals(Model1), "Fit" = predict(Model1)),
+    aes(sample = Res)
+  ) +
+    stat_qq(colour = "gold") +
+    stat_qq_line() +
+    my.theme +
+    theme_bw()
+}
+
+grid.arrange(M1.Res.Alone, M1.Res.by.Fit, M1.Res.by.Resp, M1.QQNorm.1, nrow = 2, top = "Metabolic Rate Residuals")
+
+# Large df
+
+{
+  M1.Res.Alone.z <- ggplot(
+    data = data.frame("Res" = residuals(Model1TMB, type = "pearson")),
+    aes(x = 1:nrow(BTChallenge), y = Res)
+  ) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "mediumseagreen", alpha = 0.5) +
+    xlab("Row Number") +
+    ylab("Pearson Residuals")
+
+  M1.Res.by.Fit.z <- ggplot(data = data.frame(
+    "Res" = residuals(Model1TMB, type = "pearson"),
+    "Fit" = predict(Model1)
+  ), aes(x = Fit, y = Res)) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "cornflowerblue", alpha = 0.5) +
+    xlab("Fitted Values") +
+    ylab("Pearson Residuals")
+
+  M1.Res.by.Resp.z <- ggplot(data = data.frame(
+    "Res" = residuals(Model1TMB, type = "pearson"),
+    "Resp" = BTChallenge$MO2.NMS
+  ), aes(x = Resp, y = Res)) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "mediumorchid", alpha = 0.5) +
+    xlab("Metabolic Rate (mg O2/hour") +
+    ylab("Pearson Residuals")
+
+  M1.QQNorm.1.z <- ggplot(
+    data.frame("Res" = residuals(Model1TMB), "Fit" = predict(Model1TMB)),
+    aes(sample = Res)
+  ) +
+    stat_qq(colour = "gold") +
+    stat_qq_line() +
+    my.theme +
+    theme_bw()
+}
+
+grid.arrange(M1.Res.Alone.z, M1.Res.by.Fit.z, M1.Res.by.Resp.z, M1.QQNorm.1.z, nrow = 2, top = "Metabolic Rate Residuals")
+
+## T model: Straying from normality in upper quantiles. Fan notable in residuals by fitteds. Perhaps weight by challenge temperature. First, testing for autocorrelation.
+## Z model: Bias in residuals. Very well could be a consequence of autocorrelation.
+
+ggplot(with(
+  acf(na.omit(residuals(Model1, type = "normalized")), plot = "FALSE"),
+  data.frame(lag, acf)
+), aes(x = lag, y = acf)) +
+  geom_bar(
+    stat = "identity",
+    position = "identity", fill = "slateblue", colour = "black"
+  ) +
+  theme_bw() +
+  my.theme.diag +
+  ylab("Autocorrelation \n Factor")
+rho <- acf(na.omit(residuals(Model1, type = "normalized")), plot = F)$acf[2]
+print(rho)
+
+ggplot(with(
+  acf(na.omit(residuals(Model1TMB, type = "pearson")), plot = "FALSE"),
+  data.frame(lag, acf)
+), aes(x = lag, y = acf)) +
+  geom_bar(
+    stat = "identity",
+    position = "identity", fill = "slateblue", colour = "black"
+  ) +
+  theme_bw() +
+  my.theme.diag +
+  ylab("Autocorrelation \n Factor")
+rho <- acf(na.omit(residuals(Model1, type = "normalized")), plot = F)$acf[2]
+print(rho)
+
+# Minor autocorrelation between measures in both models model. Estimating rho.
+# Faceting by paternal acclimation temperature for clearer viewing.
+
+Dat %>%
+  mutate("Res" = residuals(Model1, type = "normalized")) %>%
+  ggplot(aes(x = 1:nrow(Dat), y = Res, fill = Subject.ID, colour = Subject.ID)) +
+  my.theme +
+  theme_bw() +
+  geom_point(
+    size = 1, colour = "mediumseagreen",
+    alpha = 0.5, pch = 21
+  ) +
+  xlab("Row Number") +
+  ylab("Deviance Residuals") +
+  theme(legend.position = "NULL") +
+  geom_line(alpha = 0.4) +
+  facet_grid(
+    rows =
+      Dat$Father.Acc
+  )
+
+Dat %>%
+  mutate("Res" = residuals(Model1TMB, type = "pearson")) %>%
+  ggplot(aes(x = 1:nrow(Dat), y = Res, fill = Subject.ID, colour = Subject.ID)) +
+  my.theme +
+  theme_bw() +
+  geom_point(
+    size = 1, colour = "mediumseagreen",
+    alpha = 0.5, pch = 21
+  ) +
+  xlab("Row Number") +
+  ylab("Pearson Residuals") +
+  theme(legend.position = "NULL") +
+  geom_line(alpha = 0.4) +
+  facet_grid(
+    rows =
+      Dat$Father.Acc
+  )
+
+## Similar lag to models in Penney et al (In Press). Residuals, however, appear evenly spread.
+
+# Adjusting for autocorrelation.
+
+Model.AR <- lme(MO2.NMS ~ Mass + bSpline * Offspring.Acc * Father.Acc * Mother.Acc, random = pdBlocked(list(pdIdent(~ 0 + Father.ID), pdIdent(~ 0 + Mother.ID), pdIdent(~ 0 + Subject.ID), pdIdent(~ 0 + Degree.Day))), correlation = corAR1(), na.action = na.exclude, data = Dat)
+
+BTChallenge$AR_Group <- factor(with(BTChallenge, paste(Father.ID, Mother.ID, Subject.ID, sep = "_")))
+BTChallenge <- BTChallenge %>%
+  mutate("Time" = Challenge.Temp - 14) %>%
+  mutate("Time" = factor(Time)) %>%
+  arrange(AR_Group, Time) %>%
+  as.data.frame(.)
+
+ModelTMB.AR <- glmmTMB(MO2.NMS ~ Mass + bSpline * Offspring.Acc * Father.Acc * Mother.Acc + (1 | Father.ID) + (1 | Mother.ID) + (1 | Subject.ID) + (1 | Degree.Day) + ar1(Time + 0 | AR_Group), na.action = na.exclude, data = BTChallenge)
+
+## Diagnostics again.
+# T-model
+
+{
+  MAR.Res.Alone <- ggplot(data = data.frame("Res" = residuals(Model.AR,
+    type =
+      "normalized"
+  )), aes(x = 1:nrow(Dat), y = Res)) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "mediumseagreen", alpha = 0.5) +
+    xlab("Row Number") +
+    ylab("Deviance Residuals")
+
+  MAR.Res.by.Fit <- ggplot(data = data.frame("Res" = residuals(Model.AR,
+    type =
+      "normalized"
+  ), "Fit" = predict(Model.AR)), aes(x = Fit, y = Res)) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "cornflowerblue", alpha = 0.5) +
+    xlab("Fitted Values") +
+    ylab("Deviance Residuals")
+
+  MAR.Res.by.Resp <- ggplot(data = data.frame("Res" = residuals(Model.AR,
+    type =
+      "normalized"
+  ), "Resp" = Dat$MO2.NMS), aes(x = Resp, y = Res)) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "mediumorchid", alpha = 0.5) +
+    xlab("Metabolic Rate (mg O2/hour") +
+    ylab("Deviance Residuals")
+
+  MAR.QQNorm.1 <- ggplot(
+    data.frame("Res" = residuals(Model.AR), "Fit" = predict(Model.AR)),
+    aes(sample = Res)
+  ) +
+    stat_qq(colour = "gold") +
+    stat_qq_line() +
+    my.theme +
+    theme_bw()
+}
+
+grid.arrange(MAR.Res.Alone, MAR.Res.by.Fit, MAR.Res.by.Resp, MAR.QQNorm.1, nrow = 2, top = "Metabolic Rate Residuals - Autoregressive Correlation Structure")
+
+# Z-model
+
+{
+  MAR.Res.Alone.z <- ggplot(data = data.frame("Res" = residuals(ModelTMB.AR,
+    type =
+      "response"
+  )), aes(x = 1:nrow(BTChallenge), y = Res)) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "mediumseagreen", alpha = 0.5) +
+    xlab("Row Number") +
+    ylab("Response Residuals")
+
+  MAR.Res.by.Fit.z <- ggplot(data = data.frame("Res" = residuals(ModelTMB.AR,
+    type =
+      "response"
+  ), "Fit" = predict(ModelTMB.AR)), aes(x = Fit, y = Res)) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "cornflowerblue", alpha = 0.5) +
+    xlab("Fitted Values") +
+    ylab("Response Residuals")
+
+  MAR.Res.by.Resp.z <- ggplot(data = data.frame("Res" = residuals(ModelTMB.AR,
+    type =
+      "response"
+  ), "Resp" = BTChallenge$MO2.NMS), aes(x = Resp, y = Res)) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "mediumorchid", alpha = 0.5) +
+    xlab("Metabolic Rate (mg O2/hour") +
+    ylab("Response Residuals")
+
+  MAR.QQNorm.1.z <- ggplot(
+    data.frame("Res" = residuals(ModelTMB.AR), "Fit" = predict(ModelTMB.AR)),
+    aes(sample = Res)
+  ) +
+    stat_qq(colour = "gold") +
+    stat_qq_line() +
+    my.theme +
+    theme_bw()
+}
+
+grid.arrange(MAR.Res.Alone.z, MAR.Res.by.Fit.z, MAR.Res.by.Resp.z, MAR.QQNorm.1.z, nrow = 2, top = "Metabolic Rate Residuals - Autoregressive Correlation Structure")
+
+# Very similar outcome to previous models. In glmmTMB model, similarities could merely be a consequence of plotted residuals not correcting for autocorrelation. Checking
+
+plot(residuals(ModelTMB.AR, type = "response") ~ residuals(Model1TMB, type = "response"))
+plot(residuals(ModelTMB.AR, type = "pearson") ~ residuals(Model1TMB, type = "pearson"))
+
+# Yes, this appears to be the case. Using DHARMa to assess residuals
+
+require("DHARMa")
+BTChallenge_Clean <- na.omit(BTChallenge)
+BTChallenge_Clean$Time_Int <- as.integer(BTChallenge_Clean$Time)
+
+ModelTMB.AR <- glmmTMB(MO2.NMS ~ Mass + bSpline * Offspring.Acc * Father.Acc * Mother.Acc + (1 | Father.ID) + (1 | Mother.ID) + (1 | Subject.ID) + (1 | Degree.Day) + ar1(Time + 0 | AR_Group), na.action = na.omit, data = BTChallenge_Clean)
+
+dharma_resid <- simulateResiduals(fittedModel = ModelTMB.AR)
+plotResiduals(dharma_resid, quantreg = T) # Yes, residuals already appear cleaner.
+dharma_residAR <- recalculateResiduals(dharma_resid, group = BTChallenge_Clean$Time)
+testTemporalAutocorrelation(simulationOutput = dharma_residAR, time = sort(unique(BTChallenge_Clean$Time)))
+
+ggplot(with(
+  acf(na.omit(residuals(Model.AR, type = "normalized")), plot = "FALSE"),
+  data.frame(lag, acf)
+), aes(x = lag, y = acf)) +
+  geom_bar(
+    stat = "identity",
+    position = "identity", fill = "slateblue", colour = "black"
+  ) +
+  theme_bw() +
+  my.theme.diag +
+  ylab("Autocorrelation \n Factor")
+
+## Yes, autocorrelation and residuals do appear okay in both models.
+# Again, faceting by paternal acclimation temperature for clearer viewing.
+
+Dat %>%
+  mutate("Res" = residuals(Model.AR, type = "normalized")) %>%
+  ggplot(aes(x = 1:nrow(Dat), y = Res, fill = Subject.ID, colour = Subject.ID)) +
+  my.theme +
+  theme_bw() +
+  geom_point(
+    size = 1, colour = "mediumseagreen",
+    alpha = 0.5, pch = 21
+  ) +
+  xlab("Row Number") +
+  ylab("Deviance Residuals") +
+  theme(legend.position = "NULL") +
+  geom_line(alpha = 0.4) +
+  facet_grid(
+    rows =
+      Dat$Father.Acc
+  )
+
+BTChallenge_Clean %>%
+  mutate("Res" = dharma_resid$scaledResiduals) %>%
+  ggplot(aes(x = 1:nrow(BTChallenge_Clean), y = Res, fill = Subject.ID, colour = Subject.ID)) +
+  my.theme +
+  theme_bw() +
+  geom_point(
+    size = 1, colour = "mediumseagreen",
+    alpha = 0.5, pch = 21
+  ) +
+  xlab("Row Number") +
+  ylab("Deviance Residuals") +
+  theme(legend.position = "NULL") +
+  geom_line(alpha = 0.4) +
+  facet_grid(
+    rows =
+      BTChallenge_Clean$Father.Acc
+  )
+
+# Good.
+
+## Addressing tail in residuals
+
+Dat %>%
+  mutate("Res" = residuals(Model1, type = "normalized"), "Fit" = predict(Model.AR)) %>%
+  ggplot(aes(sample = Res, fill = Challenge.Temp)) +
+  geom_qq(pch = 21, size = 3, alpha = 0.5, aes(fill = factor(Dat$Challenge.Temp))) +
+  stat_qq_line() +
+  my.theme +
+  theme_bw()
+
+G_Col <- c(Cold = "dodgerblue3", Warm = "gold2", Hot = "firebrick")
+Dat %>%
+  mutate("Res" = abs(residuals(Model1, type = "normalized"))) %>%
+  mutate("Temp_Group" = ifelse(Challenge.Temp < 20, "Cold",
+    ifelse(Challenge.Temp > 25, "Hot", "Warm")
+  )) %>%
+  mutate("Temp_Group" = factor(Temp_Group, levels = c("Cold", "Warm", "Hot"))) %>%
+  ggplot(aes(x = Res, fill = Temp_Group)) +
+  geom_density(alpha = 0.4, colour = "black", adjust = 2) +
+  scale_fill_manual(values = G_Col) +
+  theme_classic()
+
+BTChallenge_Clean %>%
+  mutate("Res" = dharma_resid$scaledResiduals) %>%
+  mutate("Temp_Group" = ifelse(Challenge.Temp < 20, "Cold",
+    ifelse(Challenge.Temp > 25, "Hot", "Warm")
+  )) %>%
+  mutate("Temp_Group" = factor(Temp_Group, levels = c("Cold", "Warm", "Hot"))) %>%
+  ggplot(aes(x = Res, fill = Temp_Group)) +
+  geom_density(alpha = 0.4, colour = "black", adjust = 2) +
+  scale_fill_manual(values = G_Col) +
+  theme_classic()
+
+# Slightly disproportionate pulling in cold and warm groups. Weighting by challenge temperature
+
+Model.AR2 <- lme(MO2.NMS ~ Mass + bSpline * Offspring.Acc * Father.Acc * Mother.Acc, random = pdBlocked(list(pdIdent(~ 0 + Father.ID), pdIdent(~ 0 + Mother.ID), pdIdent(~ 0 + Subject.ID), pdIdent(~ 0 + Degree.Day))), correlation = corAR1(), weights = ~ 1 / Challenge.Temp, na.action = na.exclude, data = Dat)
+
+ModelTMB2.AR <- glmmTMB(MO2.NMS ~ Mass + bSpline * Offspring.Acc * Father.Acc * Mother.Acc + (1 | Father.ID) + (1 | Mother.ID) + (1 | Subject.ID) + (1 | Degree.Day) + ar1(Time + 0 | AR_Group), weights = 1 / Challenge.Temp, na.action = na.omit, data = BTChallenge_Clean)
+
+# glmmTMB model failing to converge. Assessing residuals of lme model.
+
+{
+  MAR2.Res.Alone <- ggplot(data = data.frame("Res" = residuals(Model.AR2,
+    type =
+      "normalized"
+  )), aes(x = 1:nrow(Dat), y = Res)) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "mediumseagreen", alpha = 0.5) +
+    xlab("Row Number") +
+    ylab("Deviance Residuals")
+
+  MAR2.Res.by.Fit <- ggplot(data = data.frame("Res" = residuals(Model.AR2,
+    type =
+      "normalized"
+  ), "Fit" = predict(Model.AR2)), aes(x = Fit, y = Res)) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "cornflowerblue", alpha = 0.5) +
+    xlab("Fitted Values") +
+    ylab("Deviance Residuals")
+
+  MAR2.Res.by.Resp <- ggplot(data = data.frame("Res" = residuals(Model.AR2,
+    type =
+      "normalized"
+  ), "Resp" = Dat$MO2.NMS), aes(x = Resp, y = Res)) +
+    my.theme +
+    theme_bw() +
+    geom_point(size = 3, colour = "mediumorchid", alpha = 0.5) +
+    xlab("Metabolic Rate (mg O2/hour") +
+    ylab("Deviance Residuals")
+
+  MAR2.QQNorm <- ggplot(data.frame("Res" = residuals(Model.AR2, type = "normalized"), "Fit" = predict(Model.AR2)), aes(sample = Res)) +
+    stat_qq(colour = "gold") +
+    stat_qq_line() +
+    my.theme +
+    theme_bw()
+}
+
+grid.arrange(MAR2.Res.Alone, MAR2.Res.by.Fit, MAR2.Res.by.Resp, MAR2.QQNorm, nrow = 2, top = "Metabolic Rate Residuals - Autoregressive Correlation Structure and Weighted by Challenge Temp.")
+
+## Tail persisting, but subtly. Plotting histogram of residuals.
+
+Dat %>%
+  mutate("Res" = residuals(Model.AR2, type = "normalized")) %>%
+  ggplot(aes(x = Res)) +
+  geom_histogram(fill = "magenta", colour = "black", size = 1, bins = 20) +
+  xlab("Normalized Residuals")
+
+## Appears quite nice, though a few notable outliers. Identifying outliers.
+
+Dat <- Dat %>%
+  mutate("Res" = residuals(Model.AR2, type = "normalized"))
+
+Grouped <- rbind(subset(Dat, Res < with(na.omit(Dat), mean(Res) - 3 * sd(Res))) %>%
+  mutate("Res.Group" = "Low.Out"), subset(Dat, Res > with(na.omit(Dat), mean(Res) + 3 * sd(Res))) %>%
+  mutate("Res.Group" = "High.Out"), subset(Dat, Res >= with(na.omit(Dat), mean(Res) - 3 * sd(Res)) & Res <= with(na.omit(Dat), mean(Res) + 3 * sd(Res))) %>%
+  mutate("Res.Group" = "Normal"))
+
+G1 <- data.frame(subset(Grouped, Res.Group == "High.Out") %>%
+  count(Offspring.Acc), "Group" = "Offspring.Acc")
+colnames(G1) <- c("Group.Number", "Count", "Group")
+
+G2 <- data.frame(subset(Grouped, Res.Group == "High.Out") %>%
+  count(Father.Acc), "Group" = "Father.Acc")
+colnames(G2) <- c("Group.Number", "Count", "Group")
+
+G3 <- data.frame(subset(Grouped, Res.Group == "High.Out") %>%
+  count(Mother.Acc), "Group" = "Mother.Acc")
+colnames(G3) <- c("Group.Number", "Count", "Group")
+
+rbind(G1, G2, G3)
+
+## Possible interactive assortment. Checking below.
+
+subset(Grouped, Res.Group == "High.Out") %>%
+  count(Father.Acc:Mother.Acc)
+
+## Not distinct. Checking trends accross acclimation temperature
+
+subset(Grouped, Res.Group == "High.Out") %>%
+  count(Challenge.Temp)
+
+## Not clear either. Residual trends do not appear systematic. Continuing with previous model as final.
+
+```
+### Plotting Predicted Values
+
+```{r warning = FALSE, message = FALSE}
+
+Dat$Pred <- predict(Model.AR)
+
+Challenge.Sum.Pred <- Dat %>%
+  group_by(Challenge.Temp, Offspring.Acc, Father.Acc, Mother.Acc) %>%
+  summarize(
+    Mean = mean(Pred, na.rm = TRUE), Upper.CI = mean(Pred,
+      na.rm = TRUE
+    ) + 1.96 * (sd(Pred, na.rm = TRUE) / sqrt(length(na.omit(Pred)))),
+    Lower.CI = mean(Pred, na.rm = TRUE) - 1.96 * (sd(Pred, na.rm = TRUE) /
+      sqrt(length(na.omit(Pred))))
+  )
+
+OffPat.Group.Pred <- c()
+for (i in 1:nrow(Challenge.Sum.Pred)) {
+  if (Challenge.Sum.Pred$Offspring.Acc[i] == 1 &
+    Challenge.Sum.Pred$Father.Acc[i] == 1) {
+    OffPat.Group.Pred[i] <- ("1")
+  } else if (
+    Challenge.Sum.Pred$Offspring.Acc[i] == 1 &
+      Challenge.Sum.Pred$Father.Acc[i] == 2) {
+    OffPat.Group.Pred[i] <- ("2")
+  } else if (
+    Challenge.Sum.Pred$Offspring.Acc[i] == 2 &
+      Challenge.Sum.Pred$Father.Acc[i] == 1) {
+    OffPat.Group.Pred[i] <- ("3")
+  } else if (
+    Challenge.Sum.Pred$Offspring.Acc[i] == 2 &
+      Challenge.Sum.Pred$Father.Acc[i] == 2) {
+    OffPat.Group.Pred[i] <- ("4")
+  }
+}
+Challenge.Sum.Pred$OffPat <- OffPat.Group.Pred
+
+# Faceting by maternal acclimation temperature.
+
+PredError <- ggplot(as.data.frame(Challenge.Sum.Pred), aes(
+  x = Challenge.Temp,
+  y = Mean, group = OffPat, shape = Father.Acc, colour = Offspring.Acc
+)) +
+  theme_bw() +
+  my.theme +
+  geom_errorbar(
+    mapping = aes(
+      x = Challenge.Temp,
+      ymin = c(Lower.CI), ymax = c(Upper.CI)
+    ), width = 0.2, size = 1,
+    position = position_dodge(width = 0.5)
+  ) +
+  geom_point(size = 1.5, colour = "black", position = position_dodge(width = 0.5)) +
+  xlab("Challenge Temperature \n (°C)") +
+  ylab("Metabolic Rate (mg O2/h)") +
+  theme(legend.position = "top") +
+  scale_colour_manual(values = c("dodgerblue3", "maroon1")) +
+  guides(colour = guide_legend(title = "Offspring Acclimation \n Temperature")) +
+  guides(shape = guide_legend(title = "Paternal Acclimation \n Temperature")) +
+  theme(legend.title = element_text(size = 10))
+
+PredError + facet_grid(rows = vars(Mother.Acc))
+
+OffMat.Group.Pred <- c()
+for (i in 1:nrow(Challenge.Sum.Pred)) {
+  if (Challenge.Sum.Pred$Offspring.Acc[i] == 1 &
+    Challenge.Sum.Pred$Mother.Acc[i] == 1) {
+    OffMat.Group.Pred[i] <- ("1")
+  } else if (
+    Challenge.Sum.Pred$Offspring.Acc[i] == 1 &
+      Challenge.Sum.Pred$Mother.Acc[i] == 2) {
+    OffMat.Group.Pred[i] <- ("2")
+  } else if (
+    Challenge.Sum.Pred$Offspring.Acc[i] == 2 &
+      Challenge.Sum.Pred$Mother.Acc[i] == 1) {
+    OffMat.Group.Pred[i] <- ("3")
+  } else if (
+    Challenge.Sum.Pred$Offspring.Acc[i] == 2 &
+      Challenge.Sum.Pred$Mother.Acc[i] == 2) {
+    OffMat.Group.Pred[i] <- ("4")
+  }
+}
+
+Challenge.Sum.Pred$OffMat <- OffMat.Group.Pred
+
+# And faceting by paternal acclimation temperature
+
+PredError <- ggplot(as.data.frame(Challenge.Sum.Pred), aes(
+  x = Challenge.Temp,
+  y = Mean, group = OffMat, shape = Mother.Acc, colour = Offspring.Acc
+)) +
+  theme_bw() +
+  my.theme +
+  geom_errorbar(
+    mapping = aes(
+      x = Challenge.Temp,
+      ymin = c(Lower.CI), ymax = c(Upper.CI)
+    ), width = 0.2, size = 1,
+    position = position_dodge(width = 0.5)
+  ) +
+  geom_point(size = 1.5, colour = "black", position = position_dodge(width = 0.5)) +
+  xlab("Challenge Temperature \n (°C)") +
+  ylab("Metabolic Rate (mg O2/h)") +
+  theme(legend.position = "top") +
+  scale_colour_manual(values = c("cornflowerblue", "gold2")) +
+  guides(colour = guide_legend(title = "Offspring Acclimation \n Temperature")) +
+  guides(shape = guide_legend(title = "Maternal Acclimation \n Temperature")) +
+  theme(legend.title = element_text(size = 10))
+
+PredError + facet_grid(rows = vars(Father.Acc))
+
+## Striking model fit. Checking glmmTMB model
+
+BTChallenge_Clean$Pred <- predict(ModelTMB.AR)
+
+Challenge.Sum.Pred <- BTChallenge_Clean %>%
+  group_by(Challenge.Temp, Offspring.Acc, Father.Acc, Mother.Acc) %>%
+  summarize(
+    Mean = mean(Pred, na.rm = TRUE), Upper.CI = mean(Pred,
+      na.rm = TRUE
+    ) + 1.96 * (sd(Pred, na.rm = TRUE) / sqrt(length(na.omit(Pred)))),
+    Lower.CI = mean(Pred, na.rm = TRUE) - 1.96 * (sd(Pred, na.rm = TRUE) /
+      sqrt(length(na.omit(Pred))))
+  )
+
+OffPat.Group.Pred <- c()
+for (i in 1:nrow(Challenge.Sum.Pred)) {
+  if (Challenge.Sum.Pred$Offspring.Acc[i] == 1 &
+    Challenge.Sum.Pred$Father.Acc[i] == 1) {
+    OffPat.Group.Pred[i] <- ("1")
+  } else if (
+    Challenge.Sum.Pred$Offspring.Acc[i] == 1 &
+      Challenge.Sum.Pred$Father.Acc[i] == 2) {
+    OffPat.Group.Pred[i] <- ("2")
+  } else if (
+    Challenge.Sum.Pred$Offspring.Acc[i] == 2 &
+      Challenge.Sum.Pred$Father.Acc[i] == 1) {
+    OffPat.Group.Pred[i] <- ("3")
+  } else if (
+    Challenge.Sum.Pred$Offspring.Acc[i] == 2 &
+      Challenge.Sum.Pred$Father.Acc[i] == 2) {
+    OffPat.Group.Pred[i] <- ("4")
+  }
+}
+Challenge.Sum.Pred$OffPat <- OffPat.Group.Pred
+
+# Faceting by maternal acclimation temperature again.
+
+PredError <- ggplot(as.data.frame(Challenge.Sum.Pred), aes(
+  x = Challenge.Temp,
+  y = Mean, group = OffPat, shape = Father.Acc, colour = Offspring.Acc
+)) +
+  theme_bw() +
+  my.theme +
+  geom_errorbar(
+    mapping = aes(
+      x = Challenge.Temp,
+      ymin = c(Lower.CI), ymax = c(Upper.CI)
+    ), width = 0.2, size = 1,
+    position = position_dodge(width = 0.5)
+  ) +
+  geom_point(size = 1.5, colour = "black", position = position_dodge(width = 0.5)) +
+  xlab("Challenge Temperature \n (°C)") +
+  ylab("Metabolic Rate (mg O2/h)") +
+  theme(legend.position = "top") +
+  scale_colour_manual(values = c("dodgerblue3", "maroon1")) +
+  guides(colour = guide_legend(title = "Offspring Acclimation \n Temperature")) +
+  guides(shape = guide_legend(title = "Paternal Acclimation \n Temperature")) +
+  theme(legend.title = element_text(size = 10))
+
+PredError + facet_grid(rows = vars(Mother.Acc))
+
+OffMat.Group.Pred <- c()
+for (i in 1:nrow(Challenge.Sum.Pred)) {
+  if (Challenge.Sum.Pred$Offspring.Acc[i] == 1 &
+    Challenge.Sum.Pred$Mother.Acc[i] == 1) {
+    OffMat.Group.Pred[i] <- ("1")
+  } else if (
+    Challenge.Sum.Pred$Offspring.Acc[i] == 1 &
+      Challenge.Sum.Pred$Mother.Acc[i] == 2) {
+    OffMat.Group.Pred[i] <- ("2")
+  } else if (
+    Challenge.Sum.Pred$Offspring.Acc[i] == 2 &
+      Challenge.Sum.Pred$Mother.Acc[i] == 1) {
+    OffMat.Group.Pred[i] <- ("3")
+  } else if (
+    Challenge.Sum.Pred$Offspring.Acc[i] == 2 &
+      Challenge.Sum.Pred$Mother.Acc[i] == 2) {
+    OffMat.Group.Pred[i] <- ("4")
+  }
+}
+
+Challenge.Sum.Pred$OffMat <- OffMat.Group.Pred
+
+# Paternal acclimation temperature?
+
+PredError <- ggplot(as.data.frame(Challenge.Sum.Pred), aes(
+  x = Challenge.Temp,
+  y = Mean, group = OffMat, shape = Mother.Acc, colour = Offspring.Acc
+)) +
+  theme_bw() +
+  my.theme +
+  geom_errorbar(
+    mapping = aes(
+      x = Challenge.Temp,
+      ymin = c(Lower.CI), ymax = c(Upper.CI)
+    ), width = 0.2, size = 1,
+    position = position_dodge(width = 0.5)
+  ) +
+  geom_point(size = 1.5, colour = "black", position = position_dodge(width = 0.5)) +
+  xlab("Challenge Temperature \n (°C)") +
+  ylab("Metabolic Rate (mg O2/h)") +
+  theme(legend.position = "top") +
+  scale_colour_manual(values = c("cornflowerblue", "gold2")) +
+  guides(colour = guide_legend(title = "Offspring Acclimation \n Temperature")) +
+  guides(shape = guide_legend(title = "Maternal Acclimation \n Temperature")) +
+  theme(legend.title = element_text(size = 10))
+
+PredError + facet_grid(rows = vars(Father.Acc))
+
+# Pulling out degrees of freedom using Satterthwaite method (in lmerTest)
+
+DF.Model <- lmer(MO2.NMS ~ Mass + bSpline * Offspring.Acc * Father.Acc * Mother.Acc + (1 | Father.ID) + (1 | Mother.ID) + (1 | Subject.ID) + (1 | Degree.Day), na.action = na.exclude, data = Dat)
+
+DF <- data.frame(summary(DF.Model)$coefficients)$df
+t_vals <- data.frame(summary(Model.AR)$tTab)$t.value
+
+p_vals <- c()
+for (i in 1:length(t_vals)) {
+  if (t_vals[i] > 0) {
+    p_vals[i] <- 2 * (pt(t_vals[i], df = DF[i], lower = FALSE))
+  } else if (t_vals[i] < 0) {
+    p_vals[i] <- 2 * (pt(t_vals[i], df = DF[i], lower = TRUE))
+  }
+}
+
+coef_output <- data.frame(summary(Model.AR)$tTab)
+coef_output$p.value <- p_vals
+coef_output$DF <- DF
+
+# Printing full model output
+
+summary(Model.AR)
+
+# Model output with corrected degrees of freedom and p-values
+
+print(coef_output)
+summary(ModelTMB.AR)
+
+View(data.frame(
+  "Term" = rownames(coef_output),
+  "lme_Beta" = coef_output$Value, "TMB_Beta" = as.numeric(summary(ModelTMB.AR)$coefficient$cond[, 1]),
+  "lme_p" = coef_output$p.value, "TMB_p" = as.numeric(summary(ModelTMB.AR)$coefficient$cond[, 4])
+) %>%
+  mutate("Diff" = ifelse(lme_p < 0.05 & TMB_p > 0.05, "*",
+    ifelse(TMB_p < 0.05 & lme_p > 0.05, "*", " ")
+  )))
+
+# Some subtle differences between models
+# Now using Kenward-Roger approximation
+
+require(pbkrtest)
+
+get_kr_df <- function(model_object) {
+  L <- diag(rep(1, length(fixef(model_object))))
+  L <- as.data.frame(L)
+  out <- purrr::map_dbl(L, pbkrtest::get_Lb_ddf, object = model_object)
+  names(out) <- names(fixef(model_object))
+  out
+}
+
+KR_DF <- get_kr_df(DF.Model)
+
+p_vals <- c()
+for (i in 1:length(t_vals)) {
+  if (t_vals[i] > 0) {
+    p_vals[i] <- 2 * (pt(t_vals[i], df = as.numeric(KR_DF)[i], lower = FALSE))
+  } else if (t_vals[i] < 0) {
+    p_vals[i] <- 2 * (pt(t_vals[i], df = as.numeric(KR_DF)[i], lower = TRUE))
+  }
+}
+
+DF_coef_output <- data.frame(summary(Model.AR)$tTab)
+DF_coef_output$p.value <- p_vals
+DF_coef_output$DF <- KR_DF
+
+View(data.frame(
+  "Term" = rownames(coef_output),
+  "lme_BetaSat" = coef_output$Value, "lme_BetaKR" = DF_coef_output$Value,
+  "TMB_Beta" = as.numeric(summary(ModelTMB.AR)$coefficient$cond[, 1]),
+  "lme_pSat" = coef_output$p.value, "lme_pKR" = DF_coef_output$p.value,
+  "TMB_p" = as.numeric(summary(ModelTMB.AR)$coefficient$cond[, 4])
+) %>%
+  mutate("Diff" = ifelse(lme_pKR < 0.05 & TMB_p > 0.05, "*",
+    ifelse(TMB_p < 0.05 & lme_pKR > 0.05, "*", " ")
+  )))
+
+# Satherwaitte and KR outputs are very similar - probably owing to such large DF estimates.
+# Estimating dfs according to sample sizes of offspring alone.
+
+p_vals <- c()
+
+for (i in 1:length(t_vals)) {
+  if (t_vals[i] > 0) {
+    p_vals[i] <- 2 * (pt(t_vals[i], df = 228, lower = FALSE))
+  } else if (t_vals[i] < 0) {
+    p_vals[i] <- 2 * (pt(t_vals[i], df = 228, lower = TRUE))
+  }
+}
+
+Simple_coef_output <- data.frame(summary(Model.AR)$tTab)
+Simple_coef_output$p.value <- p_vals
+Simple_coef_output$DF <- 228
+
+View(data.frame(
+  "Term" = rownames(coef_output),
+  "lme_Beta" = coef_output$Value,
+  "TMB_Beta" = as.numeric(summary(ModelTMB.AR)$coefficient$cond[, 1]),
+  "lme_pSat" = coef_output$p.value, "lme_pKR" = DF_coef_output$p.value,
+  "lme_pSimple" = Simple_coef_output$p.value,
+  "TMB_p" = as.numeric(summary(ModelTMB.AR)$coefficient$cond[, 4])
+) %>%
+  mutate("Diff" = ifelse(lme_pSimple < 0.05 & lme_pKR > 0.05, "*",
+    ifelse(lme_pKR < 0.05 & lme_pSimple > 0.05, "*", " ")
+  )))
+
+# Printing off data frame
+
+{
+  T1 <- coef_output[, c("Value", "DF", "t.value", "p.value")] %>%
+    mutate("Method" = "Satterthwaite", "Term" = rownames(coef_output)) %>%
+    rename(
+      "Test_Statistic" = "t.value", "Estimate" = "Value",
+      "p" = "p.value"
+    ) %>%
+    select(Term, Estimate, Method, DF, Test_Statistic, p)
+
+  T2 <- DF_coef_output[, c("Value", "DF", "t.value", "p.value")] %>%
+    mutate("Method" = "Kenward-Roger", "Term" = rownames(coef_output)) %>%
+    rename(
+      "Test_Statistic" = "t.value", "Estimate" = "Value",
+      "p" = "p.value"
+    ) %>%
+    select(Term, Estimate, Method, DF, Test_Statistic, p)
+
+  T3 <- as.data.frame(summary(ModelTMB.AR)$coefficient$cond)[, c("Estimate", "z value", "Pr(>|z|)")] %>%
+    mutate(
+      "Method" = "z-value", "DF" = NA,
+      "Term" = rownames(as.data.frame(summary(ModelTMB.AR)$coefficient$cond))
+    ) %>%
+    rename(
+      "Test_Statistic" = "z value",
+      "p" = "Pr(>|z|)"
+    ) %>%
+    select(Term, Estimate, Method, DF, Test_Statistic, p)
+
+  T4 <- Simple_coef_output[, c("Value", "DF", "t.value", "p.value")] %>%
+    mutate("Method" = "n-1", "Term" = rownames(coef_output)) %>%
+    rename(
+      "Test_Statistic" = "t.value", "Estimate" = "Value",
+      "p" = "p.value"
+    ) %>%
+    select(Term, Estimate, Method, DF, Test_Statistic, p)
+}
+
+All <- rbind(T1, T2, T3, T4) %>%
+  mutate(Method = factor(Method,
+    levels = c("Satterthwaite", "Kenward-Roger", "n-1", "z-value")
+  )) %>%
+  arrange(Term, Method) %>%
+  mutate("p < alpha" = ifelse(p < 0.05, "*", ""))
+
+write.csv(All, "Model_Comparison_Final.csv", row.names = FALSE)
+
+```
+### Calculating marginal and conditional r-squared values
+```{r warning = FALSE, message = FALSE}
+
+r.squaredGLMM(Model.AR)
+
+# Quite low in comparison to models in Penney et al (In Press), but somewhat reasonable.
+
+```
+### Producing marginal mean plots for lme model
+```{r warning = FALSE, message = FALSE}
+
+require("emmeans")
+
+{
+  EM_Means_Off <- emmeans::emmip(Model.AR, ~ bSpline | Offspring.Acc, cov.reduce = FALSE, nesting = NULL, nesting.order = FALSE)
+  EM_Means_Mat <- emmeans::emmip(Model.AR, ~ bSpline | Mother.Acc, cov.reduce = FALSE)
+  EM_Means_Pat <- emmeans::emmip(Model.AR, ~ bSpline | Father.Acc ~ bSpline, cov.reduce = FALSE)
+  EM_Means_Off_Pat <- emmeans::emmip(Model.AR, Offspring.Acc ~ bSpline | Father.Acc, cov.reduce = FALSE)
+  EM_Means_Off_Mat <- emmeans::emmip(Model.AR, Offspring.Acc ~ bSpline | Mother.Acc, cov.reduce = FALSE)
+  EM_Means_Mass <- emmeans::emmip(Model.AR, ~Mass, at = list(Mass = seq(min(Dat$Mass, na.rm = T), max(Dat$Mass, na.rm = T), 0.1)), CIs = TRUE, type = "response", data = Dat)
+}
+
+Raw <- as.data.frame(emmeans::emmeans(Model.AR, specs = "bSpline", by = "Offspring.Acc", cov.reduce = FALSE))
+bSpline_vals <- Raw$bSpline
+Challenge_Temp <- c()
+
+for (i in 1:length(bSpline_vals)) {
+  Challenge_Temp[i] <- BTChallenge[c(which(BTChallenge$bSpline == bSpline_vals[i])), 9]
+}
+
+# Removing replicates
+
+Challenge_Temp <- unique(Challenge_Temp)
+EM_Off <- as.data.frame(EM_Means_Off$data)
+EM_Off$Challenge <- sort(rep(Challenge_Temp, 2))
+
+# Removing prodictions for warm acclimated offspring at cold temperatures
+
+to_rm <- c(which(EM_Off$Offspring.Acc == "2" & EM_Off$Challenge < 19))
+EM_Off <- EM_Off[-to_rm, ]
+EM_Off$Upper.CI <- EM_Off$yvar + EM_Off$SE * 1.96
+EM_Off$Lower.CI <- EM_Off$yvar - EM_Off$SE * 1.96
+
+EM_Plot_Off_Ribbon <- ggplot(EM_Off, aes(x = Challenge, y = yvar, fill = Offspring.Acc, linetype = Offspring.Acc)) +
+  theme_bw() +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 7, bs = "cs"), se = FALSE, colour = "black") +
+  geom_ribbon(mapping = aes(x = Challenge, ymin = c(Lower.CI), ymax = c(Upper.CI)), alpha = 0.3, colour = NA) +
+  scale_fill_manual(values = c("dodgerblue3", "magenta"), labels = c("Cold", "Warm")) +
+  scale_linetype_manual(values = c("solid", "dashed"), labels = c("Cold", "Warm")) +
+  labs(fill = "Offspring Acclimation \n Temperature", linetype = "Offspring Acclimation \n Temperature") +
+  theme(axis.text = element_text(size = 8, colour = "black", family = "Noto Sans")) +
+  labs(x = "Challenge Temperature (°C)", y = expression("Resting MO"[2] * " (mg O"[2] * "/h)")) +
+  theme(panel.grid.major = element_blank()) +
+  xlim(c(15, 30))
+
+EM_Mat <- as.data.frame(EM_Means_Mat$data)
+EM_Mat$Challenge <- sort(rep(Challenge_Temp, 2))
+EM_Mat$Upper.CI <- EM_Mat$yvar + EM_Mat$SE * 1.96
+EM_Mat$Lower.CI <- EM_Mat$yvar - EM_Mat$SE * 1.96
+
+EM_Plot_Mat_Ribbon <- ggplot(EM_Mat, aes(x = Challenge, y = yvar, linetype = Mother.Acc, fill = Mother.Acc)) +
+  theme_bw() +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 7, bs = "cs"), se = FALSE, colour = "black") +
+  geom_ribbon(mapping = aes(x = Challenge, ymin = c(Lower.CI), ymax = c(Upper.CI)), alpha = 0.3, colour = NA) +
+  scale_fill_manual(values = c("dodgerblue3", "magenta"), labels = c("Cold", "Warm")) +
+  scale_linetype_manual(values = c("solid", "dashed"), labels = c("Cold", "Warm")) +
+  labs(fill = "Mother Acclimation \n Temperature", linetype = "Mother Acclimation \n Temperature") +
+  theme(axis.text = element_text(size = 8, colour = "black", family = "Noto Sans")) +
+  labs(x = "Challenge Temperature (°C)", y = expression("Resting MO"[2] * " (mg O"[2] * "/h)")) +
+  theme(panel.grid.major = element_blank()) +
+  xlim(c(15, 30))
+
+EM_Pat <- as.data.frame(EM_Means_Pat$data)
+EM_Pat$Challenge <- sort(rep(Challenge_Temp, 2))
+EM_Pat$Upper.CI <- EM_Pat$yvar + EM_Pat$SE * 1.96
+EM_Pat$Lower.CI <- EM_Pat$yvar - EM_Pat$SE * 1.96
+
+EM_Plot_Pat_Ribbon <- ggplot(EM_Pat, aes(x = Challenge, y = yvar, fill = Father.Acc, linetype = Father.Acc)) +
+  theme_bw() +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 7, bs = "cs"), se = FALSE, colour = "black") +
+  geom_ribbon(mapping = aes(x = Challenge, ymin = c(Lower.CI), ymax = c(Upper.CI)), alpha = 0.3, colour = NA) +
+  scale_fill_manual(values = c("dodgerblue3", "magenta"), labels = c("Cold", "Warm")) +
+  scale_linetype_manual(values = c("solid", "dashed"), labels = c("Cold", "Warm")) +
+  labs(fill = "Father Acclimation \n Temperature", linetype = "Father Acclimation \n Temperature") +
+  theme(axis.text = element_text(size = 8, colour = "black", family = "Noto Sans")) +
+  labs(x = "Challenge Temperature (°C)", y = expression("Resting MO"[2] * " (mg O"[2] * "/h)")) +
+  theme(panel.grid.major = element_blank()) +
+  xlim(c(15, 30))
+
+Off_Pat <- as.data.frame(EM_Means_Off_Pat$data)
+Off_Pat$Challenge <- sort(rep(Challenge_Temp, 4))
+Off_Pat$Upper.CI <- Off_Pat$yvar + Off_Pat$SE * 1.96
+Off_Pat$Lower.CI <- Off_Pat$yvar - Off_Pat$SE * 1.96
+
+to_rm <- c(which(Off_Pat$Offspring.Acc == "2" & Off_Pat$Challenge < 19))
+Off_Pat <- Off_Pat[-to_rm, ]
+
+facet_names <- c(`1` = "Cold Fathers", `2` = "Warm Fathers")
+facet_names_new <- c(`1` = "Cold Offspring", `2` = "Warm Offspring")
+
+EM_Plot_Off_Pat_Ribbon <- ggplot(Off_Pat, aes(x = Challenge, y = yvar, fill = Father.Acc, linetype = Father.Acc)) +
+  theme_bw() +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 7, bs = "cs"), se = FALSE, colour = "black") +
+  geom_ribbon(mapping = aes(x = Challenge, ymin = c(Lower.CI), ymax = c(Upper.CI)), alpha = 0.3, colour = NA) +
+  scale_fill_manual(values = c("dodgerblue3", "magenta"), labels = c("Cold", "Warm")) +
+  scale_linetype_manual(values = c("solid", "dashed"), labels = c("Cold", "Warm")) +
+  labs(linetype = "Father Acclimation \n Temperature", fill = "Father Acclimation \n Temperature") +
+  theme(axis.text = element_text(size = 8, colour = "black", family = "Noto Sans")) +
+  facet_wrap(~Offspring.Acc, labeller = as_labeller(facet_names_new)) +
+  labs(x = "Challenge Temperature (°C)", y = expression("Resting MO"[2] * " (mg O"[2] * "/h)")) +
+  theme(strip.text.x = element_text(family = "Noto Sans", colour = "black"), panel.grid.major = element_blank()) +
+  xlim(c(15, 30))
+
+Off_Mat <- as.data.frame(EM_Means_Off_Mat$data)
+Off_Mat$Challenge <- sort(rep(Challenge_Temp, 4))
+Off_Mat$Upper.CI <- Off_Mat$yvar + Off_Mat$SE * 1.96
+Off_Mat$Lower.CI <- Off_Mat$yvar - Off_Mat$SE * 1.96
+
+to_rm <- c(which(Off_Mat$Offspring.Acc == "2" & Off_Mat$Challenge < 19))
+Off_Mat <- Off_Mat[-to_rm, ]
+facet_names <- c(`1` = "Cold Mothers", `2` = "Warm Mothers")
+
+EM_Plot_Off_Mat_Ribbon <- ggplot(Off_Mat, aes(x = Challenge, y = yvar, fill = Mother.Acc, linetype = Mother.Acc)) +
+  theme_bw() +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 7, bs = "cs"), se = FALSE, colour = "black") +
+  geom_ribbon(mapping = aes(x = Challenge, ymin = c(Lower.CI), ymax = c(Upper.CI)), alpha = 0.3, colour = NA) +
+  scale_fill_manual(values = c("dodgerblue3", "magenta"), labels = c("Cold", "Warm")) +
+  scale_linetype_manual(values = c("solid", "dashed"), labels = c("Cold", "Warm")) +
+  labs(linetype = "Mother Acclimation \n Temperature", fill = "Mother Acclimation \n Temperature") +
+  theme(axis.text = element_text(size = 8, colour = "black", family = "Noto Sans")) +
+  facet_wrap(~Offspring.Acc, labeller = as_labeller(facet_names_new)) +
+  labs(x = "Challenge Temperature (°C)", y = expression("Resting MO"[2] * " (mg O"[2] * "/h)")) +
+  theme(strip.text.x = element_text(family = "Noto Sans", colour = "black"), panel.grid.major = element_blank()) +
+  xlim(c(15, 30))
+
+EM_Mass <- as.data.frame(EM_Means_Mass$data)
+EM_Mass$Upper.CI <- EM_Mass$yvar + EM_Mass$SE * 1.96
+EM_Mass$Lower.CI <- EM_Mass$yvar - EM_Mass$SE * 1.96
+
+EM_Plot_Mass <- ggplot(EM_Mass, aes(x = Mass, y = yvar)) +
+  theme_bw() +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 7, bs = "cs"), se = FALSE, colour = "black") +
+  geom_ribbon(mapping = aes(x = Mass, ymin = c(Lower.CI), ymax = c(Upper.CI)), alpha = 0.3, colour = NA) +
+  xlab("Mass (g)") +
+  theme(axis.text = element_text(size = 8, colour = "black", family = "Noto Sans")) +
+  labs(x = "Mass (g)", y = expression("MO"[2] * " (mg O"[2] * "/h)")) +
+  theme(panel.grid.major = element_blank())
+
+grid.arrange(EM_Plot_Off_Ribbon, EM_Plot_Mat_Ribbon, EM_Plot_Pat_Ribbon, EM_Plot_Off_Mat_Ribbon, EM_Plot_Off_Pat_Ribbon, EM_Plot_Mass, nrow = 3)
+
+Spline_plot <- BTChallenge %>%
+  ggplot(aes(x = Challenge.Temp, y = MO2.NMS)) +
+  geom_point(pch = 21, size = 3, alpha = 0.3, colour = "black", fill = "royalblue3") +
+  geom_smooth(
+    mapping = aes(x = Challenge.Temp, y = bSpline),
+    colour = "black", linetype = "dashed"
+  ) +
+  labs(x = "Challenge Temperature (°C)", y = expression("MO"[2] * " (mg O"[2] * "/h)")) +
+  theme_bw() +
+  theme(axis.text = element_text(size = 8, colour = "black", family = "Noto Sans"))
+
+print(Spline_plot)
+
+# Producing plots to save
+
+dev.new()
+EM_Plot_Off_Ribbon
+showtext_opts(dpi = 800)
+showtext_auto()
+ggsave("/home/joshk/Documents/Trout/Brook Trout Challenge Data/Offspring_alone.jpeg", EM_Plot_Off_Ribbon, dpi = 800, width = 9.45, height = 6.72)
+showtext_auto(enable = FALSE)
+
+dev.new()
+EM_Plot_Mat_Ribbon
+showtext_opts(dpi = 800)
+showtext_auto()
+ggsave("/home/joshk/Documents/Trout/Brook Trout Challenge Data/Mothers_alone.jpeg", EM_Plot_Mat_Ribbon, dpi = 800, width = 9.45, height = 6.72)
+showtext_auto(enable = FALSE)
+
+dev.new()
+EM_Plot_Pat_Ribbon
+showtext_opts(dpi = 800)
+showtext_auto()
+ggsave("/home/joshk/Documents/Trout/Brook Trout Challenge Data/Fathers_alone.jpeg", EM_Plot_Pat_Ribbon, dpi = 800, width = 9.45, height = 6.72)
+showtext_auto(enable = FALSE)
+
+dev.new()
+EM_Plot_Off_Mat_Ribbon
+showtext_opts(dpi = 800)
+showtext_auto()
+ggsave("/home/joshk/Documents/Trout/Brook Trout Challenge Data/Offspring_by_mothers.jpeg", EM_Plot_Off_Mat_Ribbon, dpi = 800, width = 10, height = 6.72)
+showtext_auto(enable = FALSE)
+
+dev.new()
+EM_Plot_Off_Pat_Ribbon
+showtext_opts(dpi = 800)
+showtext_auto()
+ggsave("/home/joshk/Documents/Trout/Brook Trout Challenge Data/Offspring_by_fathers.jpeg", EM_Plot_Off_Pat_Ribbon, dpi = 800, width = 10, height = 6.72)
+showtext_auto(enable = FALSE)
+
+dev.new()
+EM_Plot_Mass
+showtext_opts(dpi = 800)
+showtext_auto()
+ggsave("/home/joshk/Documents/Trout/Brook Trout Challenge Data/Mass_alone.jpeg", EM_Plot_Mass, dpi = 800, width = 9.45, height = 6.72)
+showtext_auto(enable = FALSE)
+
+dev.new()
+Spline_plot
+showtext_opts(dpi = 800)
+showtext_auto()
+ggsave("/home/joshk/Documents/Trout/Brook Trout Challenge Data/Spline_plot.jpeg", Spline_plot, dpi = 800, width = 9.45, height = 6.72)
+showtext_auto(enable = FALSE)
+
+## With dots
+
+EM_Plot_Off_Ribbon <- ggplot(EM_Off, aes(x = Challenge, y = yvar, fill = Offspring.Acc, linetype = Offspring.Acc)) +
+  theme_bw() +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 7, bs = "cs"), se = FALSE, colour = "black") +
+  geom_ribbon(mapping = aes(x = Challenge, ymin = c(Lower.CI), ymax = c(Upper.CI)), alpha = 0.3, colour = NA) +
+  scale_linetype_manual(values = c("solid", "dashed"), labels = c("Cold", "Warm")) +
+  scale_fill_manual(values = c("dodgerblue3", "magenta"), labels = c("Cold", "Warm")) +
+  labs(fill = "Offspring Acclimation \n Temperature", linetype = "Offspring Acclimation \n Temperature") +
+  theme(axis.text = element_text(size = 8, colour = "black", family = "Noto Sans")) +
+  labs(x = "Challenge Temperature (°C)", y = expression("Resting MO"[2] * " (mg O"[2] * "/h)")) +
+  theme(panel.grid.major = element_blank()) +
+  xlim(c(15, 30)) +
+  stat_summary(geom = "point", fun = "mean", size = 2, colour = "black", pch = 21, alpha = 0.2, data = Dat, aes(x = Challenge.Temp, y = MO2.NMS))
+
+EM_Plot_Mat_Ribbon <- ggplot(EM_Mat, aes(x = Challenge, y = yvar, colour = Mother.Acc, fill = Mother.Acc)) +
+  theme_bw() +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 7, bs = "cs"), se = FALSE) +
+  geom_ribbon(mapping = aes(x = Challenge, ymin = c(Lower.CI), ymax = c(Upper.CI)), alpha = 0.3, colour = NA) +
+  scale_fill_manual(values = c("dodgerblue3", "magenta"), labels = c("Cold", "Warm")) +
+  scale_colour_manual(values = c("dodgerblue3", "magenta"), labels = c("Cold", "Warm")) +
+  labs(fill = "Mother Acclimation \n Temperature", colour = "Mother Acclimation \n Temperature") +
+  theme(axis.text = element_text(size = 8, colour = "black", family = "Noto Sans")) +
+  labs(x = "Challenge Temperature (°C)", y = expression("Resting MO"[2] * " (mg O"[2] * "/h)")) +
+  theme(panel.grid.major = element_blank()) +
+  xlim(c(15, 30)) +
+  stat_summary(geom = "point", fun = "mean", size = 2, colour = "black", pch = 21, alpha = 0.2, data = Dat, aes(x = Challenge.Temp, y = MO2.NMS))
+
+EM_Plot_Pat_Ribbon <- ggplot(EM_Pat, aes(x = Challenge, y = yvar, fill = Father.Acc, colour = Father.Acc)) +
+  theme_bw() +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 7, bs = "cs"), se = FALSE) +
+  geom_ribbon(mapping = aes(x = Challenge, ymin = c(Lower.CI), ymax = c(Upper.CI)), alpha = 0.3, colour = NA) +
+  scale_fill_manual(values = c("dodgerblue3", "magenta"), labels = c("Cold", "Warm")) +
+  scale_colour_manual(values = c("dodgerblue3", "magenta"), labels = c("Cold", "Warm")) +
+  labs(fill = "Father Acclimation \n Temperature", colour = "Father Acclimation \n Temperature") +
+  theme(axis.text = element_text(size = 8, colour = "black", family = "Noto Sans")) +
+  labs(x = "Challenge Temperature (°C)", y = expression("Resting MO"[2] * " (mg O"[2] * "/h)")) +
+  theme(panel.grid.major = element_blank()) +
+  xlim(c(15, 30))
+
+facet_names <- c(`1` = "Cold Fathers", `2` = "Warm Fathers")
+facet_names_new <- c(`1` = "Cold Offspring", `2` = "Warm Offspring")
+
+EM_Plot_Off_Pat_Ribbon <- ggplot(Off_Pat, aes(x = Challenge, y = yvar, fill = Father.Acc, colour = Father.Acc)) +
+  theme_bw() +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 7, bs = "cs"), se = FALSE) +
+  geom_ribbon(mapping = aes(x = Challenge, ymin = c(Lower.CI), ymax = c(Upper.CI)), alpha = 0.3, colour = NA) +
+  scale_fill_manual(values = c("dodgerblue3", "magenta"), labels = c("Cold", "Warm")) +
+  scale_colour_manual(values = c("dodgerblue3", "magenta"), labels = c("Cold", "Warm")) +
+  labs(colour = "Father Acclimation \n Temperature", fill = "Father Acclimation \n Temperature") +
+  theme(axis.text = element_text(size = 8, colour = "black", family = "Noto Sans")) +
+  facet_wrap(~Offspring.Acc, labeller = as_labeller(facet_names_new)) +
+  labs(x = "Challenge Temperature (°C)", y = expression("Resting MO"[2] * " (mg O"[2] * "/h)")) +
+  theme(strip.text.x = element_text(family = "Noto Sans", colour = "black"), panel.grid.major = element_blank()) +
+  xlim(c(15, 30))
+
+facet_names <- c(`1` = "Cold Mothers", `2` = "Warm Mothers")
+
+EM_Plot_Off_Mat_Ribbon <- ggplot(Off_Mat, aes(x = Challenge, y = yvar, fill = Mother.Acc, colour = Mother.Acc)) +
+  theme_bw() +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 7, bs = "cs"), se = FALSE) +
+  geom_ribbon(mapping = aes(x = Challenge, ymin = c(Lower.CI), ymax = c(Upper.CI)), alpha = 0.3, colour = NA) +
+  scale_fill_manual(values = c("dodgerblue3", "magenta"), labels = c("Cold", "Warm")) +
+  scale_colour_manual(values = c("dodgerblue3", "magenta"), labels = c("Cold", "Warm")) +
+  labs(colour = "Mother Acclimation \n Temperature", fill = "Mother Acclimation \n Temperature") +
+  theme(axis.text = element_text(size = 8, colour = "black", family = "Noto Sans")) +
+  facet_wrap(~Offspring.Acc, labeller = as_labeller(facet_names_new)) +
+  labs(x = "Challenge Temperature (°C)", y = expression("Resting MO"[2] * " (mg O"[2] * "/h)")) +
+  theme(strip.text.x = element_text(family = "Noto Sans", colour = "black"), panel.grid.major = element_blank()) +
+  xlim(c(15, 30))
+
+EM_Plot_Mass <- ggplot(EM_Mass, aes(x = Mass, y = yvar)) +
+  theme_bw() +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 7, bs = "cs"), se = FALSE, colour = "black") +
+  geom_ribbon(mapping = aes(x = Mass, ymin = c(Lower.CI), ymax = c(Upper.CI)), alpha = 0.3, colour = NA) +
+  xlab("Mass (g)") +
+  theme(axis.text = element_text(size = 8, colour = "black", family = "Noto Sans")) +
+  labs(x = "Mass (g)", y = expression("MO"[2] * " (mg O"[2] * "/h)")) +
+  theme(panel.grid.major = element_blank())
+
+```
+### Producing marginal mean plots for glmmTMB model
+```{r warning = FALSE, message = FALSE}
+
+{
+  EM_Means_Off <- emmeans::emmip(ModelTMB.AR, Offspring.Acc ~ bSpline, cov.reduce = FALSE)
+  EM_Means_Mat <- emmeans::emmip(ModelTMB.AR, Mother.Acc ~ bSpline, cov.reduce = FALSE)
+  EM_Means_Pat <- emmeans::emmip(ModelTMB.AR, Father.Acc ~ bSpline, cov.reduce = FALSE)
+  EM_Means_Off_Pat <- emmeans::emmip(ModelTMB.AR, Offspring.Acc ~ bSpline | Father.Acc, cov.reduce = FALSE)
+  EM_Means_Off_Mat <- emmeans::emmip(ModelTMB.AR, Offspring.Acc ~ bSpline | Mother.Acc, cov.reduce = FALSE)
+  EM_Means_Mass <- emmeans::emmip(ModelTMB.AR, ~Mass, at = list(Mass = seq(min(Dat$Mass, na.rm = T), max(Dat$Mass, na.rm = T), 0.1)), CIs = TRUE, type = "response", data = Dat)
+}
+
+Raw <- as.data.frame(emmeans::emmeans(ModelTMB.AR, specs = "bSpline", by = "Offspring.Acc", cov.reduce = FALSE))
+bSpline_vals <- Raw$bSpline
+
+Challenge_Temp <- c()
+for (i in 1:length(bSpline_vals)) {
+  Challenge_Temp[i] <- BTChallenge[c(which(BTChallenge$bSpline == bSpline_vals[i])), 9]
+}
+
+# Removing replicates again
+
+Challenge_Temp <- unique(Challenge_Temp)
+EM_Off <- as.data.frame(EM_Means_Off$data)
+EM_Off$Challenge <- sort(rep(Challenge_Temp, 2))
+
+# Removing prodictions for warm acclimated offspring at cold temperatures
+
+to_rm <- c(which(EM_Off$Offspring.Acc == "2" & EM_Off$Challenge < 19))
+EM_Off <- EM_Off[-to_rm, ]
+EM_Off$Upper.CI <- EM_Off$yvar + EM_Off$SE * 1.96
+EM_Off$Lower.CI <- EM_Off$yvar - EM_Off$SE * 1.96
+
+EM_Plot_Off_Ribbon <- ggplot(EM_Off, aes(x = Challenge, y = yvar, fill = Offspring.Acc, linetype = Offspring.Acc)) +
+  theme_bw() +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 7, bs = "cs"), se = FALSE, colour = "black") +
+  geom_ribbon(mapping = aes(x = Challenge, ymin = c(Lower.CI), ymax = c(Upper.CI)), alpha = 0.3, colour = NA) +
+  scale_fill_manual(values = c("dodgerblue3", "magenta"), labels = c("Cold", "Warm")) +
+  scale_linetype_manual(values = c("solid", "dashed"), labels = c("Cold", "Warm")) +
+  labs(fill = "Offspring Acclimation \n Temperature", linetype = "Offspring Acclimation \n Temperature") +
+  theme(axis.text = element_text(size = 8, colour = "black", family = "Noto Sans")) +
+  labs(x = "Challenge Temperature (°C)", y = expression("Resting MO"[2] * " (mg O"[2] * "/h)")) +
+  theme(panel.grid.major = element_blank()) +
+  xlim(c(15, 30))
+
+EM_Mat <- as.data.frame(EM_Means_Mat$data)
+EM_Mat$Challenge <- sort(rep(Challenge_Temp, 2))
+EM_Mat$Upper.CI <- EM_Mat$yvar + EM_Mat$SE * 1.96
+EM_Mat$Lower.CI <- EM_Mat$yvar - EM_Mat$SE * 1.96
+
+EM_Plot_Mat_Ribbon <- ggplot(EM_Mat, aes(x = Challenge, y = yvar, linetype = Mother.Acc, fill = Mother.Acc)) +
+  theme_bw() +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 7, bs = "cs"), se = FALSE, colour = "black") +
+  geom_ribbon(mapping = aes(x = Challenge, ymin = c(Lower.CI), ymax = c(Upper.CI)), alpha = 0.3, colour = NA) +
+  scale_fill_manual(values = c("dodgerblue3", "magenta"), labels = c("Cold", "Warm")) +
+  scale_linetype_manual(values = c("solid", "dashed"), labels = c("Cold", "Warm")) +
+  labs(fill = "Mother Acclimation \n Temperature", linetype = "Mother Acclimation \n Temperature") +
+  theme(axis.text = element_text(size = 8, colour = "black", family = "Noto Sans")) +
+  labs(x = "Challenge Temperature (°C)", y = expression("Resting MO"[2] * " (mg O"[2] * "/h)")) +
+  theme(panel.grid.major = element_blank()) +
+  xlim(c(15, 30))
+
+EM_Pat <- as.data.frame(EM_Means_Pat$data)
+EM_Pat$Challenge <- sort(rep(Challenge_Temp, 2))
+EM_Pat$Upper.CI <- EM_Pat$yvar + EM_Pat$SE * 1.96
+EM_Pat$Lower.CI <- EM_Pat$yvar - EM_Pat$SE * 1.96
+
+EM_Plot_Pat_Ribbon <- ggplot(EM_Pat, aes(x = Challenge, y = yvar, fill = Father.Acc, linetype = Father.Acc)) +
+  theme_bw() +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 7, bs = "cs"), se = FALSE, colour = "black") +
+  geom_ribbon(mapping = aes(x = Challenge, ymin = c(Lower.CI), ymax = c(Upper.CI)), alpha = 0.3, colour = NA) +
+  scale_fill_manual(values = c("dodgerblue3", "magenta"), labels = c("Cold", "Warm")) +
+  scale_linetype_manual(values = c("solid", "dashed"), labels = c("Cold", "Warm")) +
+  labs(fill = "Father Acclimation \n Temperature", linetype = "Father Acclimation \n Temperature") +
+  theme(axis.text = element_text(size = 8, colour = "black", family = "Noto Sans")) +
+  labs(x = "Challenge Temperature (°C)", y = expression("Resting MO"[2] * " (mg O"[2] * "/h)")) +
+  theme(panel.grid.major = element_blank()) +
+  xlim(c(15, 30))
+
+Off_Pat <- as.data.frame(EM_Means_Off_Pat$data)
+Off_Pat$Challenge <- sort(rep(Challenge_Temp, 4))
+Off_Pat$Upper.CI <- Off_Pat$yvar + Off_Pat$SE * 1.96
+Off_Pat$Lower.CI <- Off_Pat$yvar - Off_Pat$SE * 1.96
+
+to_rm <- c(which(Off_Pat$Offspring.Acc == "2" & Off_Pat$Challenge < 19))
+Off_Pat <- Off_Pat[-to_rm, ]
+
+facet_names <- c(`1` = "Cold Fathers", `2` = "Warm Fathers")
+facet_names_new <- c(`1` = "Cold Offspring", `2` = "Warm Offspring")
+
+EM_Plot_Off_Pat_Ribbon <- ggplot(Off_Pat, aes(x = Challenge, y = yvar, fill = Father.Acc, linetype = Father.Acc)) +
+  theme_bw() +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 7, bs = "cs"), se = FALSE, colour = "black") +
+  geom_ribbon(mapping = aes(x = Challenge, ymin = c(Lower.CI), ymax = c(Upper.CI)), alpha = 0.3, colour = NA) +
+  scale_fill_manual(values = c("dodgerblue3", "magenta"), labels = c("Cold", "Warm")) +
+  scale_linetype_manual(values = c("solid", "dashed"), labels = c("Cold", "Warm")) +
+  labs(linetype = "Father Acclimation \n Temperature", fill = "Father Acclimation \n Temperature") +
+  theme(axis.text = element_text(size = 8, colour = "black", family = "Noto Sans")) +
+  facet_wrap(~Offspring.Acc, labeller = as_labeller(facet_names_new)) +
+  labs(x = "Challenge Temperature (°C)", y = expression("Resting MO"[2] * " (mg O"[2] * "/h)")) +
+  theme(strip.text.x = element_text(family = "Noto Sans", colour = "black"), panel.grid.major = element_blank()) +
+  xlim(c(15, 30))
+
+Off_Mat <- as.data.frame(EM_Means_Off_Mat$data)
+Off_Mat$Challenge <- sort(rep(Challenge_Temp, 4))
+Off_Mat$Upper.CI <- Off_Mat$yvar + Off_Mat$SE * 1.96
+Off_Mat$Lower.CI <- Off_Mat$yvar - Off_Mat$SE * 1.96
+
+to_rm <- c(which(Off_Mat$Offspring.Acc == "2" & Off_Mat$Challenge < 19))
+Off_Mat <- Off_Mat[-to_rm, ]
+
+facet_names <- c(`1` = "Cold Mothers", `2` = "Warm Mothers")
+
+EM_Plot_Off_Mat_Ribbon <- ggplot(Off_Mat, aes(x = Challenge, y = yvar, fill = Mother.Acc, linetype = Mother.Acc)) +
+  theme_bw() +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 7, bs = "cs"), se = FALSE, colour = "black") +
+  geom_ribbon(mapping = aes(x = Challenge, ymin = c(Lower.CI), ymax = c(Upper.CI)), alpha = 0.3, colour = NA) +
+  scale_fill_manual(values = c("dodgerblue3", "magenta"), labels = c("Cold", "Warm")) +
+  scale_linetype_manual(values = c("solid", "dashed"), labels = c("Cold", "Warm")) +
+  labs(linetype = "Mother Acclimation \n Temperature", fill = "Mother Acclimation \n Temperature") +
+  theme(axis.text = element_text(size = 8, colour = "black", family = "Noto Sans")) +
+  facet_wrap(~Offspring.Acc, labeller = as_labeller(facet_names_new)) +
+  labs(x = "Challenge Temperature (°C)", y = expression("Resting MO"[2] * " (mg O"[2] * "/h)")) +
+  theme(strip.text.x = element_text(family = "Noto Sans", colour = "black"), panel.grid.major = element_blank()) +
+  xlim(c(15, 30))
+
+EM_Mass <- as.data.frame(EM_Means_Mass$data)
+EM_Mass$Upper.CI <- EM_Mass$yvar + EM_Mass$SE * 1.96
+EM_Mass$Lower.CI <- EM_Mass$yvar - EM_Mass$SE * 1.96
+
+EM_Plot_Mass <- ggplot(EM_Mass, aes(x = Mass, y = yvar)) +
+  theme_bw() +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 7, bs = "cs"), se = FALSE, colour = "black") +
+  geom_ribbon(mapping = aes(x = Mass, ymin = c(Lower.CI), ymax = c(Upper.CI)), alpha = 0.3, colour = NA) +
+  xlab("Mass (g)") +
+  theme(axis.text = element_text(size = 8, colour = "black", family = "Noto Sans")) +
+  labs(x = "Mass (g)", y = expression("MO"[2] * " (mg O"[2] * "/h)")) +
+  theme(panel.grid.major = element_blank())
+
+grid.arrange(EM_Plot_Off_Ribbon, EM_Plot_Mat_Ribbon, EM_Plot_Pat_Ribbon, EM_Plot_Off_Mat_Ribbon, EM_Plot_Off_Pat_Ribbon, EM_Plot_Mass, nrow = 3)
+
+Spline_plot <- BTChallenge %>%
+  ggplot(aes(x = Challenge.Temp, y = MO2.NMS)) +
+  geom_point(pch = 21, size = 3, alpha = 0.3, colour = "black", fill = "royalblue3") +
+  geom_smooth(
+    mapping = aes(x = Challenge.Temp, y = bSpline),
+    colour = "black", linetype = "dashed"
+  ) +
+  labs(x = "Challenge Temperature (°C)", y = expression("MO"[2] * " (mg O"[2] * "/h)")) +
+  theme_bw() +
+  theme(axis.text = element_text(size = 8, colour = "black", family = "Noto Sans"))
+
+print(Spline_plot)
+
+dev.new()
+EM_Plot_Off_Ribbon
+showtext_opts(dpi = 800)
+showtext_auto()
+ggsave("/home/joshk/Documents/Trout/Brook Trout Challenge Data/Offspring_alone_z.jpeg", EM_Plot_Off_Ribbon, dpi = 800, width = 9.45, height = 6.72)
+showtext_auto(enable = FALSE)
+
+dev.new()
+EM_Plot_Mat_Ribbon
+showtext_opts(dpi = 800)
+showtext_auto()
+ggsave("/home/joshk/Documents/Trout/Brook Trout Challenge Data/Mothers_alone_z.jpeg", EM_Plot_Mat_Ribbon, dpi = 800, width = 9.45, height = 6.72)
+showtext_auto(enable = FALSE)
+
+dev.new()
+EM_Plot_Pat_Ribbon
+showtext_opts(dpi = 800)
+showtext_auto()
+ggsave("/home/joshk/Documents/Trout/Brook Trout Challenge Data/Fathers_alone_z.jpeg", EM_Plot_Pat_Ribbon, dpi = 800, width = 9.45, height = 6.72)
+showtext_auto(enable = FALSE)
+
+dev.new()
+EM_Plot_Off_Mat_Ribbon
+showtext_opts(dpi = 800)
+showtext_auto()
+ggsave("/home/joshk/Documents/Trout/Brook Trout Challenge Data/Offspring_by_mothers_z.jpeg", EM_Plot_Off_Mat_Ribbon, dpi = 800, width = 10, height = 6.72)
+showtext_auto(enable = FALSE)
+
+dev.new()
+EM_Plot_Off_Pat_Ribbon
+showtext_opts(dpi = 800)
+showtext_auto()
+ggsave("/home/joshk/Documents/Trout/Brook Trout Challenge Data/Offspring_by_fathers_z.jpeg", EM_Plot_Off_Pat_Ribbon, dpi = 800, width = 10, height = 6.72)
+showtext_auto(enable = FALSE)
+
+dev.new()
+EM_Plot_Mass
+showtext_opts(dpi = 800)
+showtext_auto()
+ggsave("/home/joshk/Documents/Trout/Brook Trout Challenge Data/Mass_alone_z.jpeg", EM_Plot_Mass, dpi = 800, width = 9.45, height = 6.72)
+showtext_auto(enable = FALSE)
+
+dev.new()
+Spline_plot
+showtext_opts(dpi = 800)
+showtext_auto()
+ggsave("/home/joshk/Documents/Trout/Brook Trout Challenge Data/Spline_z.jpeg", Spline_plot, dpi = 800, width = 9.45, height = 6.72)
+showtext_auto(enable = FALSE)
+
+```
